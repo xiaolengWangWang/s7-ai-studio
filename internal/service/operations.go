@@ -10,7 +10,11 @@ import (
 )
 
 func (c *Controller) Read(ctx context.Context, points []Point) error {
-	s, ctx, done, e := c.acquire(ctx, 0)
+	return c.read(ctx, points, 0)
+}
+
+func (c *Controller) read(ctx context.Context, points []Point, generation uint64) error {
+	s, ctx, done, e := c.acquire(ctx, generation)
 	if e != nil {
 		return e
 	}
@@ -132,7 +136,9 @@ func (c *Controller) StartPolling(ctx context.Context, points []Point, interval 
 			if !valid || pctx.Err() != nil {
 				return
 			}
-			if c.Read(pctx, points) != nil {
+			// Stopping polling cancels scheduling, while an in-flight read may finish.
+			// Disconnect and shutdown still cancel the session and its active read.
+			if c.read(ctx, points, gen) != nil {
 				return
 			}
 			timer := time.NewTimer(interval)

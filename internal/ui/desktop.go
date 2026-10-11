@@ -39,13 +39,14 @@ type Desktop struct {
 	table                                                                                                    *widget.Table
 	rows                                                                                                     [][]string
 	packets                                                                                                  *widget.List
+	packetSelection                                                                                          int
 	wire                                                                                                     *widget.Entry
 	logs                                                                                                     *widget.Label
 }
 
 func NewDesktop(a fyne.App, c *service.Controller, version string) *Desktop {
 	ctx, cancel := context.WithCancel(context.Background())
-	d := &Desktop{app: a, controller: c, ctx: ctx, cancel: cancel}
+	d := &Desktop{app: a, controller: c, ctx: ctx, cancel: cancel, packetSelection: -1}
 	d.win = a.NewWindow("S7 AI Studio — " + version)
 	d.win.SetIcon(icon.Application())
 	d.heading = widget.NewLabelWithStyle("S7 AI Studio  "+version+" · GUI 预览版", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
@@ -214,6 +215,11 @@ func (d *Desktop) refresh(s service.Snapshot) {
 	}
 	d.writeStatus.SetText(writeText)
 	d.packets.Refresh()
+	if d.packetSelection >= 0 && d.packetSelection < len(s.Packets) {
+		d.wire.SetText(packetText(s.Packets[d.packetSelection]))
+	} else if d.packetSelection >= 0 {
+		d.packets.UnselectAll()
+	}
 	d.logs.SetText(joinLogs(s.Logs))
 	record := "记录目录：" + s.RecordDir + "  · 按天 / 50 MB 轮转"
 	if s.RecordError != "" {

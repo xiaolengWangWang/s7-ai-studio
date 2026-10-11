@@ -21,11 +21,16 @@ func (d *Desktop) packetPanel() fyne.CanvasObject {
 		o.(*widget.Label).SetText(fmt.Sprintf("%s %s #%d %s %s", e.Time.Local().Format("15:04:05.000"), e.Dir, e.RequestID, e.Operation, e.Status))
 	})
 	d.packets.OnSelected = func(id widget.ListItemID) {
-		if id >= len(d.snapshot.Packets) {
+		if id < 0 || id >= len(d.snapshot.Packets) {
 			return
 		}
+		d.packetSelection = id
 		e := d.snapshot.Packets[id]
 		d.wire.SetText(packetText(e))
+	}
+	d.packets.OnUnselected = func(widget.ListItemID) {
+		d.packetSelection = -1
+		d.wire.SetText("")
 	}
 	split := container.NewHSplit(d.packets, d.wire)
 	split.Offset = .42
