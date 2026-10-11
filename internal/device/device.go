@@ -38,6 +38,12 @@ type ReadResult struct {
 	Error   string    `json:"error,omitempty"`
 }
 type WriteResult struct {
+	Address  Address        `json:"address"`
+	State    string         `json:"state"`
+	Error    string         `json:"error,omitempty"`
+	Segments []WriteSegment `json:"segments,omitempty"`
+}
+type WriteSegment struct {
 	Address Address `json:"address"`
 	State   string  `json:"state"`
 	Error   string  `json:"error,omitempty"`

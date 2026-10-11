@@ -65,6 +65,7 @@ func (e Event) Clone() Event {
 		}
 		if r.Write != nil {
 			v := *r.Write
+			v.Segments = append([]WriteSegment(nil), v.Segments...)
 			e.Results[i].Write = &v
 		}
 	}
