@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"s7-ai-studio/internal/modbus"
+	"s7-ai-studio/internal/device"
 )
 
 // Use incompressible bytes so these tests still exercise the physical file
@@ -98,7 +98,7 @@ func TestNearLimitLegacyUpgradeDoesNotExceed50MB(t *testing.T) {
 	if r.Path() == path {
 		t.Fatal("an index upgrade that cannot fit must continue in a successor")
 	}
-	id, err := r.StartSession(modbus.ModeTCP, "upgraded:502", 1)
+	id, err := r.StartSession(device.ProtocolModbusTCP, "upgraded:502", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func Test64KiBPageDatabaseRotatesWithin50MB(t *testing.T) {
 	if err := r.db.QueryRow("PRAGMA page_size").Scan(&pageSize); err != nil || pageSize != 65536 {
 		t.Fatalf("non-default page size was not preserved: %d, %v", pageSize, err)
 	}
-	id, err := r.StartSession(modbus.ModeTCP, "64k-pages:502", 1)
+	id, err := r.StartSession(device.ProtocolModbusTCP, "64k-pages:502", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,14 +202,14 @@ func TestQueuedPacketsSurviveRotationAndClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := r.StartSession(modbus.ModeTCP, "packets:502", 1)
+	id, err := r.StartSession(device.ProtocolModbusTCP, "packets:502", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	const count = 125
 	raw := rotationPayload(t, 600000)
 	for i := 0; i < count; i++ {
-		r.Record(id, modbus.Packet{Time: time.Now(), RequestID: uint64(i + 1), Dir: modbus.DirTX, Mode: modbus.ModeTCP, Raw: raw, Status: modbus.StatusSent})
+		r.Record(id, device.Event{Time: time.Now(), RequestID: uint64(i + 1), Dir: device.DirTX, Protocol: device.ProtocolModbusTCP, Raw: raw, Status: device.StatusSent})
 	}
 	if err := r.EndSession(id); err != nil {
 		t.Fatal(err)
@@ -261,7 +261,7 @@ func TestConcurrentRecordersRotateWithoutOverwritingFiles(t *testing.T) {
 	var wg sync.WaitGroup
 	raw := rotationPayload(t, 900000)
 	for _, r := range []*Recorder{first, second} {
-		id, err := r.StartSession(modbus.ModeTCP, "multi:502", 1)
+		id, err := r.StartSession(device.ProtocolModbusTCP, "multi:502", 1)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -310,7 +310,7 @@ func TestDatabaseRotatesAt50MBWithoutLosingHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { r.Close() })
-	id, err := r.StartSession(modbus.ModeTCP, "rotation:502", 1)
+	id, err := r.StartSession(device.ProtocolModbusTCP, "rotation:502", 1)
 	if err != nil {
 		t.Fatal(err)
 	}

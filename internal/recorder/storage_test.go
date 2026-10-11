@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"s7-ai-studio/internal/modbus"
+	"s7-ai-studio/internal/device"
 )
 
 func TestCompressedPayloadsPersistAndReadBack(t *testing.T) {
@@ -19,7 +19,7 @@ func TestCompressedPayloadsPersistAndReadBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { r.Close() })
-	id, err := r.StartSession(modbus.ModeTCP, "compression:502", 1)
+	id, err := r.StartSession(device.ProtocolModbusTCP, "compression:502", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +28,7 @@ func TestCompressedPayloadsPersistAndReadBack(t *testing.T) {
 	if err := r.Log(id, e); err != nil {
 		t.Fatal(err)
 	}
-	r.Record(id, modbus.Packet{Time: time.Now(), Dir: modbus.DirTX, Mode: modbus.ModeTCP, Status: modbus.StatusSent, Raw: raw})
+	r.Record(id, device.Event{Time: time.Now(), Dir: device.DirTX, Protocol: device.ProtocolModbusTCP, Status: device.StatusSent, Raw: raw})
 	if err := r.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -73,13 +73,13 @@ func TestRecordOwnsQueuedBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { r.Close() })
-	id, err := r.StartSession(modbus.ModeTCP, "buffer:502", 1)
+	id, err := r.StartSession(device.ProtocolModbusTCP, "buffer:502", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	raw := []byte{1, 3, 0, 42}
 	r.dbMu.Lock()
-	r.Record(id, modbus.Packet{Time: time.Now(), Dir: modbus.DirTX, Mode: modbus.ModeTCP, Status: modbus.StatusSent, Raw: raw})
+	r.Record(id, device.Event{Time: time.Now(), Dir: device.DirTX, Protocol: device.ProtocolModbusTCP, Status: device.StatusSent, Raw: raw})
 	raw[0] = 255
 	r.dbMu.Unlock()
 	if err := r.Close(); err != nil {
@@ -97,7 +97,7 @@ func TestCloseReportsAsyncWriteFailureAndWaitsForAllCallers(t *testing.T) {
 		t.Fatal(err)
 	}
 	// 不存在的会话使后台事务失败；Close 必须将错误传给调用方。
-	r.Record(123, modbus.Packet{Time: time.Now(), Dir: modbus.DirTX, Mode: modbus.ModeTCP, Status: modbus.StatusSent})
+	r.Record(123, device.Event{Time: time.Now(), Dir: device.DirTX, Protocol: device.ProtocolModbusTCP, Status: device.StatusSent})
 	var wg sync.WaitGroup
 	errs := make([]error, 8)
 	for i := range errs {
@@ -197,7 +197,7 @@ func TestCorruptCompressedRowsReturnErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	id, err := r.StartSession(modbus.ModeTCP, "corrupt:502", 1)
+	id, err := r.StartSession(device.ProtocolModbusTCP, "corrupt:502", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +228,7 @@ func TestSnapshotKeepsCompressedRowsAndWALData(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	id, err := r.StartSession(modbus.ModeTCP, "snapshot:502", 1)
+	id, err := r.StartSession(device.ProtocolModbusTCP, "snapshot:502", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +255,7 @@ func TestDailyRecorderRejectsWritesAfterClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := r.StartSession(modbus.ModeTCP, "closed:502", 1)
+	id, err := r.StartSession(device.ProtocolModbusTCP, "closed:502", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +267,7 @@ func TestDailyRecorderRejectsWritesAfterClose(t *testing.T) {
 	if err := r.Log(id, Event{Kind: EventReadFail, Detail: "关闭后"}); err == nil {
 		t.Error("关闭后的日志写入重新打开了数据库")
 	}
-	if _, err := r.StartSession(modbus.ModeTCP, "late:502", 2); err == nil {
+	if _, err := r.StartSession(device.ProtocolModbusTCP, "late:502", 2); err == nil {
 		t.Error("关闭后创建会话成功")
 	}
 	if err := r.EndSession(id); err == nil {

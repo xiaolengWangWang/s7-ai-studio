@@ -1,9 +1,8 @@
 // Package recorder 是 Packet Recorder 的 SQLite 一侧：把每次连接（会话）和全部收发记录存进本机数据库，
-// 供事后查看（设计文档 14.3）。表里的 status、protocol 取值与 modbus.Status、modbus.Mode 一致。
+// 供事后查看（设计文档 14.3）。表里的 status、protocol 取值与 device.Status、device.Protocol 一致。
 package recorder
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -14,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"s7-ai-studio/internal/modbus"
+	"s7-ai-studio/internal/device"
 )
 
 const schema = `
@@ -43,6 +42,8 @@ CREATE TABLE IF NOT EXISTS packets (
 	status     TEXT    NOT NULL, -- SENT、SUCCESS、TIMEOUT、EXCEPTION、CRC_ERROR、LATE_RESPONSE ……
 	rtt_us     INTEGER NOT NULL, -- 仅结果行
 	connection_id TEXT NOT NULL DEFAULT '',
+	operation TEXT NOT NULL DEFAULT '',
+	metadata TEXT NOT NULL DEFAULT '',
 	error      TEXT
 );
 CREATE TABLE IF NOT EXISTS events (
@@ -65,7 +66,7 @@ CREATE INDEX IF NOT EXISTS events_session ON events(session_id, id);
 
 type item struct {
 	session int64
-	p       modbus.Packet
+	p       device.Event
 }
 
 // ErrClosed indicates a synchronous write attempted after recording stopped.
@@ -221,6 +222,8 @@ func migrate(db *sql.DB) error {
 		{"events", "data_codec", "INTEGER NOT NULL DEFAULT 0"},
 		{"packets", "connection_id", "TEXT NOT NULL DEFAULT ''"},
 		{"packets", "raw_codec", "INTEGER NOT NULL DEFAULT 0"},
+		{"packets", "operation", "TEXT NOT NULL DEFAULT ''"},
+		{"packets", "metadata", "TEXT NOT NULL DEFAULT ''"},
 	} {
 		if have[c.table] == nil {
 			columns, err := queryColumns(query, c.table)
@@ -264,14 +267,14 @@ func queryColumns(query func(string, ...any) (*sql.Rows, error), table string) (
 }
 
 // Record 记录一条收发。不阻塞，可以在收发回调里直接调用。
-func (r *Recorder) Record(session int64, p modbus.Packet) {
+func (r *Recorder) Record(session int64, p device.Event) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if r.closed {
 		r.Dropped.Add(1)
 		return
 	}
-	p.Raw = bytes.Clone(p.Raw) // the caller may reuse its receive buffer
+	p = p.Clone() // the caller may reuse buffers and nested results
 	select {
 	case r.ch <- item{session, p}:
 	default:
@@ -352,7 +355,7 @@ func (r *Recorder) insertBatch(batch []item) error {
 	}
 	defer tx.Rollback()
 	st, err := tx.Prepare(`INSERT INTO packets (session_id, time, request_id, direction, protocol, slave, tx_id, function,
-		address, count, raw, status, rtt_us, error, connection_id, raw_codec) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		address, count, raw, status, rtt_us, error, connection_id, raw_codec, operation, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
@@ -363,12 +366,16 @@ func (r *Recorder) insertBatch(batch []item) error {
 		if err != nil {
 			return err
 		}
-		var e any
-		if p.Err != nil {
-			e = p.Err.Error()
+		meta, err := storePacketMetadata(p)
+		if err != nil {
+			return err
 		}
-		if _, err := st.Exec(it.session, p.Time.UnixMicro(), p.RequestID, string(p.Dir), string(p.Mode), p.Slave, p.TxID,
-			byte(p.Function), p.Address, p.Count, raw, string(p.Status), p.RTT.Microseconds(), e, p.ConnectionID, codec); err != nil {
+		legacy := device.LegacyFields{}
+		if p.Legacy != nil {
+			legacy = *p.Legacy
+		}
+		if _, err := st.Exec(it.session, p.Time.UnixMicro(), p.RequestID, string(p.Dir), string(p.Protocol), legacy.Slave, legacy.TxID,
+			legacy.Function, legacy.Address, legacy.Count, raw, string(p.Status), p.RTT.Microseconds(), p.Error, p.ConnectionID, codec, p.Operation, meta); err != nil {
 			return err
 		}
 	}
@@ -402,7 +409,7 @@ func (r *Recorder) checkOpen() error {
 }
 
 // StartSession 在连接建立时调用，返回会话 ID。
-func (r *Recorder) StartSession(mode modbus.Mode, target string, window int) (int64, error) {
+func (r *Recorder) StartSession(mode device.Protocol, target string, window int) (int64, error) {
 	r.dbMu.Lock()
 	defer r.dbMu.Unlock()
 	if err := r.checkOpen(); err != nil {
@@ -538,7 +545,7 @@ func (r *Recorder) Events(session int64) ([]Event, error) {
 type Session struct {
 	ID          int64
 	Start, End  time.Time // End 为零值表示进行中或没有正常断开
-	Mode        modbus.Mode
+	Protocol    device.Protocol
 	Target      string
 	Window      int
 	Packets     int
@@ -572,7 +579,7 @@ func (r *Recorder) Sessions(limit int) ([]Session, error) {
 		var s Session
 		var start int64
 		var end sql.NullInt64
-		if err := rows.Scan(&s.ID, &start, &end, &s.Mode, &s.Target, &s.Window, &s.Packets, &s.Errors, &s.Disconnects, &s.Faults); err != nil {
+		if err := rows.Scan(&s.ID, &start, &end, &s.Protocol, &s.Target, &s.Window, &s.Packets, &s.Errors, &s.Disconnects, &s.Faults); err != nil {
 			return nil, err
 		}
 		s.Start = time.UnixMilli(start)
@@ -585,7 +592,7 @@ func (r *Recorder) Sessions(limit int) ([]Session, error) {
 }
 
 // Packets 返回会话最后 limit 条收发记录，按时间正序。
-func (r *Recorder) Packets(session int64, limit int) ([]modbus.Packet, error) {
+func (r *Recorder) Packets(session int64, limit int) ([]device.Event, error) {
 	r.dbMu.RLock()
 	defer r.dbMu.RUnlock()
 	columns, err := databaseColumns(r.db, "packets")
@@ -600,29 +607,40 @@ func (r *Recorder) Packets(session int64, limit int) ([]modbus.Packet, error) {
 	if columns["raw_codec"] {
 		codecColumn = "raw_codec"
 	}
+	operationColumn, metadataColumn := "''", "''"
+	if columns["operation"] {
+		operationColumn = "operation"
+	}
+	if columns["metadata"] {
+		metadataColumn = "metadata"
+	}
 	rows, err := r.db.Query(`SELECT time, request_id, direction, protocol, slave, tx_id, function, address, count, raw,
-		status, rtt_us, error, `+connectionColumn+`, `+codecColumn+` FROM packets WHERE session_id = ? ORDER BY id DESC LIMIT ?`, session, limit)
+		status, rtt_us, error, `+connectionColumn+`, `+codecColumn+`, `+operationColumn+`, `+metadataColumn+` FROM packets WHERE session_id = ? ORDER BY id DESC LIMIT ?`, session, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []modbus.Packet
+	var out []device.Event
 	for rows.Next() {
-		var p modbus.Packet
+		var p device.Event
 		var t, rtt int64
-		var fn byte
+		var legacy device.LegacyFields
 		var codec int
+		var metadata string
 		var e sql.NullString
-		if err := rows.Scan(&t, &p.RequestID, &p.Dir, &p.Mode, &p.Slave, &p.TxID, &fn, &p.Address, &p.Count, &p.Raw,
-			&p.Status, &rtt, &e, &p.ConnectionID, &codec); err != nil {
+		if err := rows.Scan(&t, &p.RequestID, &p.Dir, &p.Protocol, &legacy.Slave, &legacy.TxID, &legacy.Function, &legacy.Address, &legacy.Count, &p.Raw,
+			&p.Status, &rtt, &e, &p.ConnectionID, &codec, &p.Operation, &metadata); err != nil {
 			return nil, err
 		}
 		if p.Raw, err = decodeData(p.Raw, codec); err != nil {
 			return nil, fmt.Errorf("读取会话 %d 的报文：%w", session, err)
 		}
-		p.Time, p.Function, p.RTT = time.UnixMicro(t), modbus.FunctionCode(fn), time.Duration(rtt)*time.Microsecond
+		p.Time, p.RTT = time.UnixMicro(t), time.Duration(rtt)*time.Microsecond
 		if e.Valid {
-			p.Err = errors.New(e.String)
+			p.Error = e.String
+		}
+		if err := restorePacketMetadata(&p, metadata, legacy); err != nil {
+			return nil, err
 		}
 		out = append(out, p)
 	}

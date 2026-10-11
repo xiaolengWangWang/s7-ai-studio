@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"s7-ai-studio/internal/modbus"
+	"s7-ai-studio/internal/device"
 )
 
 // MaxFileBytes limits each SQLite database to 50 MB (decimal bytes).
@@ -273,7 +273,7 @@ func (r *Recorder) SessionsFile(path string, limit int) ([]Session, error) {
 	return (&Recorder{db: db}).Sessions(limit)
 }
 
-func (r *Recorder) PacketsFile(path string, session int64, limit int) ([]modbus.Packet, error) {
+func (r *Recorder) PacketsFile(path string, session int64, limit int) ([]device.Event, error) {
 	db, err := readDatabase(path)
 	if err != nil {
 		return nil, err

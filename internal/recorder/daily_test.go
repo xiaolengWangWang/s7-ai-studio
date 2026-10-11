@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"s7-ai-studio/internal/modbus"
+	"s7-ai-studio/internal/device"
 )
 
 // fakeDay replaces the clock used for daily file names; the background writer reads it too.
@@ -34,11 +34,11 @@ func TestDailyFilesRollOverAtMidnight(t *testing.T) {
 	if got := filepath.Base(r.Path()); got != "packets-20261010-001.sqlite3" {
 		t.Fatalf("当天第一个文件 = %s", got)
 	}
-	id, err := r.StartSession(modbus.ModeTCP, "plc:502", 1)
+	id, err := r.StartSession(device.ProtocolModbusTCP, "plc:502", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.Record(id, modbus.Packet{Time: time.Now(), RequestID: 1, Dir: modbus.DirTX, Mode: modbus.ModeTCP, Status: modbus.StatusSent, Raw: []byte{1, 3}})
+	r.Record(id, device.Event{Time: time.Now(), RequestID: 1, Dir: device.DirTX, Protocol: device.ProtocolModbusTCP, Status: device.StatusSent, Raw: []byte{1, 3}})
 
 	// 过了零点：下一次写入换到新日期的文件，跨零点的会话照常记录和结束
 	advance(2 * time.Minute)

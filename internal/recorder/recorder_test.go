@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"s7-ai-studio/internal/modbus"
+	"s7-ai-studio/internal/device"
 )
 
 func TestPacketConnectionIdentityAndLegacyDatabase(t *testing.T) {
@@ -29,12 +29,12 @@ func TestPacketConnectionIdentityAndLegacyDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := r.StartSession(modbus.ModeTCP, "synthetic", 1)
+	id, err := r.StartSession(device.ProtocolModbusTCP, "synthetic", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := modbus.Packet{Time: time.Now(), RequestID: 1, Dir: modbus.DirTX, Mode: modbus.ModeTCP}
-	json.Unmarshal([]byte(`{"ConnectionID":"synthetic-connection"}`), &p)
+	p := device.Event{Time: time.Now(), RequestID: 1, Dir: device.DirTX, Protocol: device.ProtocolModbusTCP}
+	json.Unmarshal([]byte(`{"connection_id":"synthetic-connection"}`), &p)
 	r.Record(id, p)
 	if err := r.Close(); err != nil {
 		t.Fatal(err)
@@ -49,7 +49,7 @@ func TestPacketConnectionIdentityAndLegacyDatabase(t *testing.T) {
 		t.Fatalf("recorded packet unavailable: %v", err)
 	}
 	b, _ := json.Marshal(ps[0])
-	if !strings.Contains(string(b), `"ConnectionID":"synthetic-connection"`) {
+	if !strings.Contains(string(b), `"connection_id":"synthetic-connection"`) {
 		t.Error("connection identity was lost while recording or reading")
 	}
 }
@@ -75,7 +75,7 @@ func TestReadLegacyArchiveWithoutMigratingIt(t *testing.T) {
 	}
 	defer r.Close()
 	packets, err := r.PacketsFile(path, 1, 10)
-	if err != nil || len(packets) != 1 || packets[0].ConnectionID != "" || packets[0].Address != 10 {
+	if err != nil || len(packets) != 1 || packets[0].ConnectionID != "" || packets[0].Legacy.Address != 10 {
 		t.Fatalf("legacy archive lost data: %v %+v", err, packets)
 	}
 	db, err = sql.Open(driverName, path)
@@ -100,7 +100,7 @@ func TestDatabaseFileReadableByIndependentSQLiteConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	id, err := r.StartSession(modbus.ModeTCP, "192.168.1.10:502", 1)
+	id, err := r.StartSession(device.ProtocolModbusTCP, "192.168.1.10:502", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,18 +128,18 @@ func TestRecordAndRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := r.StartSession(modbus.ModeRTUOverTCP, "192.168.1.20:502", 2)
+	id, err := r.StartSession(device.ProtocolRTUOverTCP, "192.168.1.20:502", 2)
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().Truncate(time.Microsecond)
-	want := []modbus.Packet{
-		{Time: now, RequestID: 7, Dir: modbus.DirTX, Mode: modbus.ModeRTUOverTCP, Slave: 1, Function: 3, Address: 346, Count: 2,
-			Raw: []byte{1, 3, 1, 0x5A, 0, 2, 0xE5, 0xE3}, Status: modbus.StatusSent},
-		{Time: now.Add(12 * time.Millisecond), RequestID: 7, Dir: modbus.DirRX, Mode: modbus.ModeRTUOverTCP, Slave: 1, Function: 3,
-			Address: 346, Count: 2, Raw: []byte{1, 3, 4, 0, 0, 0x41, 0x70, 0x9A, 0x33}, Status: modbus.StatusSuccess, RTT: 12 * time.Millisecond},
-		{Time: now.Add(time.Second), RequestID: 8, Dir: modbus.DirRX, Mode: modbus.ModeRTUOverTCP, Slave: 1, Function: 3,
-			Address: 600, Count: 4, Status: modbus.StatusTimeout, Err: modbus.ErrTimeout},
+	want := []device.Event{
+		{Time: now, RequestID: 7, Dir: device.DirTX, Protocol: device.ProtocolRTUOverTCP, Legacy: &device.LegacyFields{Slave: 1, Function: 3, Address: 346, Count: 2},
+			Raw: []byte{1, 3, 1, 0x5A, 0, 2, 0xE5, 0xE3}, Status: device.StatusSent},
+		{Time: now.Add(12 * time.Millisecond), RequestID: 7, Dir: device.DirRX, Protocol: device.ProtocolRTUOverTCP, Legacy: &device.LegacyFields{Slave: 1, Function: 3, Address: 346, Count: 2},
+			Raw: []byte{1, 3, 4, 0, 0, 0x41, 0x70, 0x9A, 0x33}, Status: device.StatusSuccess, RTT: 12 * time.Millisecond},
+		{Time: now.Add(time.Second), RequestID: 8, Dir: device.DirRX, Protocol: device.ProtocolRTUOverTCP, Legacy: &device.LegacyFields{Slave: 1, Function: 3, Address: 600, Count: 4},
+			Status: device.StatusTimeout, Error: "modbus: 响应超时"},
 	}
 	for _, p := range want {
 		r.Record(id, p)
@@ -173,7 +173,7 @@ func TestRecordAndRead(t *testing.T) {
 	defer r.Close()
 	ss, err := r.Sessions(10)
 	if err != nil || len(ss) != 1 || ss[0].Packets != 3 || ss[0].Errors != 1 || ss[0].Target != "192.168.1.20:502" ||
-		ss[0].Mode != modbus.ModeRTUOverTCP || ss[0].Window != 2 || ss[0].End.IsZero() || ss[0].Disconnects != 1 || ss[0].Faults != 1 {
+		ss[0].Protocol != device.ProtocolRTUOverTCP || ss[0].Window != 2 || ss[0].End.IsZero() || ss[0].Disconnects != 1 || ss[0].Faults != 1 {
 		t.Fatalf("会话 %+v %v", ss, err)
 	}
 	ev, err := r.Events(id)
@@ -189,16 +189,16 @@ func TestRecordAndRead(t *testing.T) {
 	}
 	for i := range want {
 		g, w := got[i], want[i]
-		if !g.Time.Equal(w.Time) || (g.Err == nil) != (w.Err == nil) {
-			t.Errorf("第 %d 条时间或错误不符：%v %v / %v %v", i, g.Time, g.Err, w.Time, w.Err)
+		if !g.Time.Equal(w.Time) || (g.Error == "") != (w.Error == "") {
+			t.Errorf("第 %d 条时间或错误不符：%v %v / %v %v", i, g.Time, g.Error, w.Time, w.Error)
 		}
-		g.Time, w.Time, g.Err, w.Err = time.Time{}, time.Time{}, nil, nil
+		g.Time, w.Time, g.Error, w.Error = time.Time{}, time.Time{}, "", ""
 		if !reflect.DeepEqual(g, w) {
 			t.Errorf("第 %d 条：\n%+v\n%+v", i, g, w)
 		}
 	}
-	if got[2].Err.Error() != modbus.ErrTimeout.Error() {
-		t.Errorf("错误文字 %q", got[2].Err)
+	if got[2].Error != "modbus: 响应超时" {
+		t.Errorf("错误文字 %q", got[2].Error)
 	}
 	if last, _ := r.Packets(id, 1); len(last) != 1 || last[0].RequestID != 8 {
 		t.Errorf("limit 应取最后的记录：%+v", last)
@@ -220,10 +220,10 @@ func TestRecordNeverBlocks(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	id, _ := r.StartSession(modbus.ModeTCP, "x", 1)
+	id, _ := r.StartSession(device.ProtocolModbusTCP, "x", 1)
 	start := time.Now()
 	for i := 0; i < 10000; i++ {
-		r.Record(id, modbus.Packet{Time: time.Now(), Dir: modbus.DirTX, Mode: modbus.ModeTCP, Status: modbus.StatusSent})
+		r.Record(id, device.Event{Time: time.Now(), Dir: device.DirTX, Protocol: device.ProtocolModbusTCP, Status: device.StatusSent})
 	}
 	if time.Since(start) > time.Second {
 		t.Errorf("10000 次 Record 用了 %v，不应阻塞", time.Since(start))
@@ -278,7 +278,7 @@ func TestRunningSessions(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	id, err := r.StartSession(modbus.ModeTCP, "10.0.0.1:502", 1)
+	id, err := r.StartSession(device.ProtocolModbusTCP, "10.0.0.1:502", 1)
 	if err != nil || !r.Running(id) {
 		t.Fatalf("开始后应为进行中：%v %v", r.Running(id), err)
 	}

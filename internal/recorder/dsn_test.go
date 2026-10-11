@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"s7-ai-studio/internal/modbus"
+	"s7-ai-studio/internal/device"
 )
 
 func TestFileURIUsesAbsoluteEscapedPaths(t *testing.T) {
@@ -79,12 +79,12 @@ func TestDatabasePathsWithURICharacters(t *testing.T) {
 		t.Fatalf("open database at the requested path: %v", err)
 	}
 	t.Cleanup(func() { r.Close() })
-	id, err := r.StartSession(modbus.ModeTCP, "special-path:502", 1)
+	id, err := r.StartSession(device.ProtocolModbusTCP, "special-path:502", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	raw := []byte{1, 3, 0, 1}
-	r.Record(id, modbus.Packet{Time: time.Now(), RequestID: 1, Dir: modbus.DirTX, Mode: modbus.ModeTCP, Raw: raw, Status: modbus.StatusSent})
+	r.Record(id, device.Event{Time: time.Now(), RequestID: 1, Dir: device.DirTX, Protocol: device.ProtocolModbusTCP, Raw: raw, Status: device.StatusSent})
 	if err := r.Log(id, Event{Kind: EventReadFail, Detail: "DSN 路径测试"}); err != nil {
 		t.Fatal(err)
 	}

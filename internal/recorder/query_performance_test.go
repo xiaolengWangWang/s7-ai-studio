@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"s7-ai-studio/internal/modbus"
+	"s7-ai-studio/internal/device"
 )
 
 func queryRecorder(t testing.TB) *Recorder {
@@ -78,11 +78,11 @@ func TestRecentSessionsKeepCountsAndLimitSemantics(t *testing.T) {
 // including interleaved sessions in a batch and its request ordering.
 func TestBatchKeepsInterleavedSessionsAcrossRotation(t *testing.T) {
 	r := queryRecorder(t)
-	first, err := r.StartSession(modbus.ModeTCP, "first:502", 1)
+	first, err := r.StartSession(device.ProtocolModbusTCP, "first:502", 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := r.StartSession(modbus.ModeTCP, "second:502", 2)
+	second, err := r.StartSession(device.ProtocolModbusTCP, "second:502", 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,8 +98,8 @@ func TestBatchKeepsInterleavedSessionsAcrossRotation(t *testing.T) {
 		if i%2 != 0 {
 			id = second
 		}
-		batch[i] = item{id, modbus.Packet{Time: time.Unix(0, 0), RequestID: uint64(i + 1),
-			Dir: modbus.DirTX, Mode: modbus.ModeTCP, Status: modbus.StatusSent, Raw: []byte{1, 3}}}
+		batch[i] = item{id, device.Event{Time: time.Unix(0, 0), RequestID: uint64(i + 1),
+			Dir: device.DirTX, Protocol: device.ProtocolModbusTCP, Status: device.StatusSent, Raw: []byte{1, 3}}}
 	}
 	if err := r.insert(batch); err != nil {
 		t.Fatal(err)
@@ -203,8 +203,8 @@ func BenchmarkInsertBatchSameSession(b *testing.B) {
 	seedQueryArchive(b, r, 1, 0, 0)
 	batch := make([]item, 500)
 	for i := range batch {
-		batch[i] = item{1, modbus.Packet{Time: time.Unix(0, 0), RequestID: uint64(i + 1),
-			Dir: modbus.DirRX, Mode: modbus.ModeTCP, Status: modbus.StatusSuccess, Raw: []byte{1, 3, 2, 0, 7}}}
+		batch[i] = item{1, device.Event{Time: time.Unix(0, 0), RequestID: uint64(i + 1),
+			Dir: device.DirRX, Protocol: device.ProtocolModbusTCP, Status: device.StatusSuccess, Raw: []byte{1, 3, 2, 0, 7}}}
 	}
 	b.ReportAllocs()
 	b.ResetTimer()
