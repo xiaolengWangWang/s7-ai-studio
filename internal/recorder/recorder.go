@@ -293,9 +293,11 @@ func (r *Recorder) loop() {
 		}
 		if err := r.insert(batch); err != nil {
 			r.Dropped.Add(int64(len(batch)))
+			r.mu.Lock()
 			if r.writeErr == nil {
 				r.writeErr = fmt.Errorf("报文写入失败：%w", err)
 			}
+			r.mu.Unlock()
 		}
 		clear(batch) // release queued payloads even while the recorder is idle
 		batch = batch[:0]
@@ -383,6 +385,13 @@ func (r *Recorder) insertBatch(batch []item) error {
 }
 
 // Close 写完缓冲里剩下的记录后关闭数据库。
+// Health exposes asynchronous saving failures without blocking communication.
+func (r *Recorder) Health() (int64, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.Dropped.Load(), r.writeErr
+}
+
 func (r *Recorder) Close() error {
 	r.closeOnce.Do(func() {
 		r.mu.Lock()

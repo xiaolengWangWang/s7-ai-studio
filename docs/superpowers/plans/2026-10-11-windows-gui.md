@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - 单工作区；本次交付与运行验证限定 Windows x64；无需安装 Go。
-- GUI 包使用 `0.1.0-alpha.2` 预览标识；Windows 数字文件版本为 `0.1.0.0`。
+- GUI 包使用 `0.2.0` 预览标识；Windows 数字文件版本为 `0.2.0.0`。
 - 默认禁用写入；用户勾选允许写入并确认目标、类型和值后才执行；不会自动重发写入。
 - 保留 CONFIRMED、REJECTED、UNKNOWN 及各段状态；CONFIRMED 后执行一次独立读回。
 - 本机演示仅监听 `127.0.0.1` 的实际空闲端口，并标注为合成协议对端。
@@ -69,7 +69,7 @@
 
 **Interfaces:**
 - Consumes: `ui.NewDesktop`、`service.New`、`platform.Setup`, `PrewarmFonts`, `ConfigureApp`, `WorkArea`, `FitSize`、`icon.Application()`。
-- Produces: `build/windows.ps1 -Version 0.1.0-alpha.2 -CompilerRoot D:\tools\winlibs-gcc16\mingw64`，输出 `dist/windows-gui/S7AIStudio-0.1.0-alpha.2-Windows-x64.zip` 与 SHA256SUMS、build-manifest、验证报告/截图。数字资源版本固定 `0.1.0.0`，UI/说明保留完整预览版本。
+- Produces: `build/windows.ps1 -Version 0.2.0 -CompilerRoot D:\tools\winlibs-gcc16\mingw64`，输出 `dist/windows-gui/S7AIStudio-0.2.0-Windows-x64.zip` 与 SHA256SUMS、build-manifest、验证报告/截图。数字资源版本固定 `0.2.0.0`，UI/说明保留完整预览版本。
 
 - [ ] **Step 1: 核对启动/关闭合同。** 入口先配置平台与字体，再创建 app/controller/window；关闭拦截在后台 Shutdown 后经 Fyne 线程退出，保存失败写入 app.log。提供显式本机验证模式 `--smoke-test <目录>`，由应用自身执行演示读 42、受控写 123、读回、原生 Canvas 截图、SQLite 排空后输出 JSON 并退出；普通启动不自动连接或写入。模式只使用自有合成对端。
 - [ ] **Step 2: 实现入口与 PowerShell 打包。** 定位并验证 GCC，临时配置 CGO/CC/PATH；资源构建和链接后补写高 DPI/icon/version；使用 `-H windowsgui`、`no_emoji`、静态 MinGW 运行库。每次仅更新本版专用 dist 子目录，说明采用 UTF-8 BOM，检查无加密标头、无占位符，再 ZIP/hash。文档注明实际能力、记录路径、明确写入操作与实机未验证。
