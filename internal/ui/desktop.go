@@ -55,7 +55,8 @@ func NewDesktop(a fyne.App, c *service.Controller, version string) *Desktop {
 	d.recordStatus.Wrapping = fyne.TextWrapBreak
 	top := container.NewVBox(d.heading, d.connectionPanel(), d.status)
 	tabs := container.NewAppTabs(container.NewTabItem("点位与读写", d.pointsPanel()), container.NewTabItem("报文", d.packetPanel()), container.NewTabItem("日志", d.logPanel()))
-	d.win.SetContent(container.NewPadded(container.NewBorder(top, d.recordStatus, nil, nil, tabs)))
+	body := container.NewVScroll(container.NewBorder(top, nil, nil, nil, tabs))
+	d.win.SetContent(container.NewPadded(container.NewBorder(nil, d.recordStatus, nil, nil, body)))
 	w, h := platform.WorkArea()
 	d.win.Resize(platform.FitSize(fyne.NewSize(1180, 820), w, h, d.win.Canvas().Scale()))
 	d.refresh(c.Snapshot())

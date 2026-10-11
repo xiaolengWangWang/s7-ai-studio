@@ -310,6 +310,9 @@ func (c *Controller) failure(s *session, e error) {
 	if e == nil {
 		return
 	}
+	if state, ok := s.d.(interface{ IsClosed() bool }); ok && !state.IsClosed() {
+		return
+	}
 	c.mu.Lock()
 	if c.s == s && !c.closed {
 		c.snap.State = "error"
@@ -339,6 +342,12 @@ func (c *Controller) Close() error {
 		if c.rec != nil {
 			c.closeErr = c.rec.Close()
 		}
+		c.mu.Lock()
+		c.healthLocked()
+		if c.snap.RecordError != "" {
+			c.closeErr = errors.Join(c.closeErr, errors.New(c.snap.RecordError))
+		}
+		c.mu.Unlock()
 	})
 	return c.closeErr
 }

@@ -2,13 +2,16 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"net"
+	"os"
 	"path/filepath"
 	"s7-ai-studio/internal/device"
 	"s7-ai-studio/internal/recorder"
 	"s7-ai-studio/internal/s7"
 	"s7-ai-studio/internal/simulator"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -151,6 +154,79 @@ func TestUnknownNeverRetries(t *testing.T) {
 	if e == nil || s.WriteResult == nil || s.WriteResult.State != "UNKNOWN" || srv.Stats().Writes != 1 {
 		t.Fatalf("unknown was lost or retried: %+v %v", s, e)
 	}
+}
+func TestRejectedWritePreservesSessionAndPolling(t *testing.T) {
+	_, target := peer(t, simulator.Fault{RejectArea: "M"})
+	c := newController(t, Options{})
+	connect(t, c, target)
+	if err := c.StartPolling(context.Background(), []Point{point}, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	until(t, func() bool { return len(c.Snapshot().Results) == 1 })
+	gen := c.Snapshot().Generation
+	err := c.Write(context.Background(), WriteRequest{Point{"MD0", "DINT", 1}, "123", gen}, true)
+	s := c.Snapshot()
+	if err == nil || s.WriteResult == nil || s.WriteResult.State != "REJECTED" {
+		t.Fatalf("rejection not reported: %+v %v", s, err)
+	}
+	if s.State != "connected" || !s.Polling || s.Generation != gen {
+		t.Fatalf("valid rejection invalidated healthy session: %+v", s)
+	}
+	if err = c.Read(context.Background(), []Point{point}); err != nil {
+		t.Fatal("same session cannot read after rejection", err)
+	}
+	if got := c.Snapshot().Results; len(got) != 1 || FormatValue(got[0].Value) != "42" {
+		t.Fatalf("read after rejection: %+v", got)
+	}
+}
+
+func TestCloseReportsRecordingFailures(t *testing.T) {
+	t.Run("session metadata", func(t *testing.T) {
+		dir := t.TempDir()
+		c := newController(t, Options{RecordDir: dir, Dial: func(context.Context, string, s7.Options) (device.Driver, error) {
+			return &blockingDriver{}, nil
+		}})
+		connect(t, c, "127.0.0.1:102")
+		files, err := filepath.Glob(filepath.Join(dir, "*.sqlite3"))
+		if err != nil || len(files) != 1 {
+			t.Fatalf("archives: %v %v", files, err)
+		}
+		driver := "sqlite"
+		for _, name := range sql.Drivers() {
+			if name == "sqlite3" {
+				driver = name
+			}
+		}
+		db, err := sql.Open(driver, files[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = db.Exec(`CREATE TRIGGER reject_session_end BEFORE UPDATE ON sessions BEGIN SELECT RAISE(FAIL, 'blocked session metadata'); END`)
+		closeErr := db.Close()
+		if err != nil || closeErr != nil {
+			t.Fatalf("trigger: %v %v", err, closeErr)
+		}
+		if err = c.Close(); err == nil || !strings.Contains(err.Error(), "blocked session metadata") {
+			t.Fatalf("shutdown hid metadata failure: %v", err)
+		}
+	})
+	t.Run("initialization", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "file")
+		if err := os.WriteFile(path, []byte("x"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		c := newController(t, Options{RecordDir: path})
+		if err := c.Close(); err == nil {
+			t.Fatal("shutdown hid initialization failure")
+		}
+	})
+	t.Run("queue drops", func(t *testing.T) {
+		c := newController(t, Options{})
+		c.rec.Dropped.Add(1)
+		if err := c.Close(); err == nil || !strings.Contains(err.Error(), "1") {
+			t.Fatalf("shutdown hid dropped packet: %v", err)
+		}
+	})
 }
 func TestDemoRecorderLifecycle(t *testing.T) {
 	dir := t.TempDir()

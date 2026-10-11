@@ -142,6 +142,16 @@ func (c *Client) Close() error {
 	c.once.Do(func() { close(c.closed); e = c.conn.Close() })
 	return e
 }
+
+// IsClosed reports whether a transport or protocol failure invalidated the session.
+func (c *Client) IsClosed() bool {
+	select {
+	case <-c.closed:
+		return true
+	default:
+		return false
+	}
+}
 func (c *Client) nextRef() uint16 {
 	c.reference++
 	if c.reference == 0 {

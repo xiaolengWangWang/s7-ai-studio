@@ -3,7 +3,9 @@ package ui
 import (
 	"context"
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
 	"image/png"
 	"os"
 	"path/filepath"
@@ -113,5 +115,36 @@ func TestDesktopCompactLayout(t *testing.T) {
 	defer f.Close()
 	if e = png.Encode(f, im); e != nil {
 		t.Fatal(e)
+	}
+}
+
+func TestDesktopFitsHighDPIWorkArea(t *testing.T) {
+	d, _ := desktop(t, "")
+	var expand func(fyne.CanvasObject)
+	expand = func(o fyne.CanvasObject) {
+		switch o := o.(type) {
+		case *widget.Accordion:
+			o.Open(0)
+		case *fyne.Container:
+			for _, child := range o.Objects {
+				expand(child)
+			}
+		case *container.Scroll:
+			expand(o.Content)
+		}
+	}
+	size := platform.FitSize(fyne.NewSize(1180, 820), 1366, 728, 1.5)
+	for _, expanded := range []bool{false, true} {
+		if expanded {
+			expand(d.Window().Content())
+		}
+		min := d.Window().Content().MinSize()
+		if min.Width > size.Width || min.Height > size.Height {
+			t.Fatalf("expanded=%v: minimum %v exceeds available high-DPI size %v", expanded, min, size)
+		}
+		d.Window().Resize(size)
+		if got := d.Window().Canvas().Size(); got.Width > size.Width || got.Height > size.Height {
+			t.Fatalf("window exceeds desktop: %v > %v", got, size)
+		}
 	}
 }
