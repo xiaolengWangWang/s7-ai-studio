@@ -34,6 +34,13 @@ func TestTPKTInvalidLength(t *testing.T) {
 		}
 	}
 }
+
+func TestTPKTTruncationReturnsOnlyReceivedPayload(t *testing.T) {
+	got, err := ReadTPKT(bytes.NewReader([]byte{3, 0, 0, 8, 2, 240}), 1024)
+	if err == nil || !bytes.Equal(got, []byte{2, 240}) {
+		t.Fatalf("fabricated payload: %x, %v", got, err)
+	}
+}
 func FuzzReadTPKT(f *testing.F) {
 	f.Add([]byte{3, 0, 0, 7, 2, 240, 128})
 	f.Fuzz(func(t *testing.T, b []byte) { ReadTPKT(bytes.NewReader(b), 1024) })

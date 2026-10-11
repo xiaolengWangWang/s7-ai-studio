@@ -36,7 +36,11 @@ func testPeer(t *testing.T, mode string, size int) (string, *peerTrace) {
 		if _, e = ReadTPKT(c, 2048); e != nil {
 			return
 		}
-		if e = WriteTPKT(c, fromHex("11d00001000200c0010ac1020100c2020102")); e != nil {
+		cc := fromHex("11d00001000200c0010ac1020100c2020102")
+		if mode == "bad-cc" {
+			cc[1] = 0xe0
+		}
+		if e = WriteTPKT(c, cc); e != nil {
 			return
 		}
 		for {
@@ -58,6 +62,12 @@ func testPeer(t *testing.T, mode string, size int) (string, *peerTrace) {
 			switch params[0] {
 			case 0xf0:
 				response = peerResponse(reference, []byte{0xf0, 0, 0, 1, 0, 1, byte(size >> 8), byte(size)}, nil)
+				if mode == "bad-setup-ref" {
+					response[5]++
+				}
+				if mode == "bad-setup-function" {
+					response[12] = 4
+				}
 			case 4:
 				trace.reads.Add(1)
 				if mode == "close-second-read" && trace.reads.Load() == 2 {
@@ -128,6 +138,15 @@ func testPeer(t *testing.T, mode string, size int) (string, *peerTrace) {
 			if len(p) > int(trace.maxSize.Load()) {
 				trace.maxSize.Store(int32(len(p)))
 			}
+			if mode == "truncated-read" && params[0] == 4 {
+				wire := wireBytes(append([]byte{2, 0xf0, 0x80}, response...))
+				c.Write(wire[:len(wire)-2])
+				return
+			}
+			if mode == "invalid-tpkt" && params[0] == 4 {
+				c.Write([]byte{2, 0, 0, 7})
+				return
+			}
 			if e = WriteTPKT(c, append([]byte{2, 0xf0, 0x80}, response...)); e != nil {
 				return
 			}
@@ -174,6 +193,69 @@ func TestHandshakeNegotiatesSmallerPDU(t *testing.T) {
 	cap := c.Capabilities()
 	if cap.PDULength != 128 || cap.Family != "" || cap.Verified {
 		t.Fatalf("%+v", cap)
+	}
+}
+
+func TestFailedHandshakeObserverRecordsParseError(t *testing.T) {
+	for _, tc := range []struct {
+		mode, operation string
+		size            int
+	}{
+		{"bad-cc", "CONNECT", 480},
+		{"bad-setup-ref", "SETUP", 480},
+		{"bad-setup-function", "SETUP", 480},
+		{"", "SETUP", 32},
+	} {
+		t.Run(tc.mode+tc.operation, func(t *testing.T) {
+			target, _ := testPeer(t, tc.mode, tc.size)
+			opts := DefaultOptions()
+			var events []device.Event
+			opts.Observer = device.ObserverFunc(func(e device.Event) { events = append(events, e) })
+			c, err := Dial(context.Background(), target, opts)
+			if c != nil {
+				c.Close()
+			}
+			if err == nil || len(events) < 2 {
+				t.Fatalf("handshake did not fail: %v %+v", err, events)
+			}
+			last := events[len(events)-1]
+			if last.Operation != tc.operation || last.Dir != device.DirRX || last.Status != device.StatusParseError || last.Error != err.Error() {
+				t.Fatalf("failed handshake recorded as success: %+v; %v", last, err)
+			}
+		})
+	}
+}
+
+func TestObserverRecordsExactTruncatedOrInvalidWire(t *testing.T) {
+	for _, mode := range []string{"truncated-read", "invalid-tpkt"} {
+		t.Run(mode, func(t *testing.T) {
+			target, _ := testPeer(t, mode, 480)
+			opts := DefaultOptions()
+			var events []device.Event
+			opts.Observer = device.ObserverFunc(func(e device.Event) {
+				if e.Operation == "READ" {
+					events = append(events, e)
+				}
+			})
+			c, err := Dial(context.Background(), target, opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer c.Close()
+			a, _ := device.ParseAddress("DB1.DBD0", "DINT", 1)
+			_, err = c.Read(context.Background(), []device.Address{a})
+			if err == nil || len(events) != 2 {
+				t.Fatalf("truncated read accepted: %v %+v", err, events)
+			}
+			wire := events[1].Raw
+			if mode == "truncated-read" {
+				if len(wire) != 27 || binary.BigEndian.Uint16(wire[2:4]) != 29 {
+					t.Fatalf("RX evidence fabricated: %x", wire)
+				}
+			} else if len(wire) != 4 || wire[0] != 2 {
+				t.Fatalf("invalid header lost or replaced: %x", wire)
+			}
+		})
 	}
 }
 func TestReadBatchPerItemError(t *testing.T) {

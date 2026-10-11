@@ -69,6 +69,7 @@ func Dial(ctx context.Context, target string, opts Options) (*Client, error) {
 	code, e := validateCC(cc)
 	if e != nil {
 		c.Close()
+		setEventError(&events, e)
 		return nil, e
 	}
 	c.maxTPKT = (1 << code) + 4
@@ -93,12 +94,15 @@ func Dial(ctx context.Context, target string, opts Options) (*Client, error) {
 		if e == nil {
 			e = fmt.Errorf("invalid S7 setup response")
 		}
+		setEventError(&events, e)
 		return nil, e
 	}
 	n := int(binary.BigEndian.Uint16(p.params[6:8]))
 	if n < 64 || n > int(requested) || binary.BigEndian.Uint16(p.params[2:4]) < 1 || binary.BigEndian.Uint16(p.params[4:6]) < 1 {
 		c.Close()
-		return nil, fmt.Errorf("invalid negotiated S7 parameters")
+		e = fmt.Errorf("invalid negotiated S7 parameters")
+		setEventError(&events, e)
+		return nil, e
 	}
 	c.pduLength = n
 	return c, nil
@@ -211,9 +215,9 @@ func (c *Client) exchange(ctx context.Context, payload []byte, operation string,
 	tx := device.Event{Time: start.UTC(), RequestID: c.requestID, ConnectionID: c.connectionID, Protocol: device.ProtocolS7TCP, Dir: device.DirTX, Operation: operation, Targets: targets, Status: device.StatusSent, Raw: wireBytes(payload)}
 	*events = append(*events, tx.Clone())
 	err := WriteTPKT(c.conn, payload)
-	var raw []byte
+	var raw, receivedWire []byte
 	if err == nil {
-		raw, err = ReadTPKT(c.conn, c.maxTPKT)
+		raw, receivedWire, err = readTPKT(c.conn, c.maxTPKT)
 	}
 	stop()
 	if ctx.Err() != nil {
@@ -222,16 +226,15 @@ func (c *Client) exchange(ctx context.Context, payload []byte, operation string,
 	rx := tx
 	rx.Time = time.Now().UTC()
 	rx.Dir = device.DirRX
-	rx.Raw = nil
+	rx.Raw = receivedWire
 	rx.RTT = time.Since(start)
 	rx.Status = device.StatusSuccess
-	if raw != nil {
-		rx.Raw = wireBytes(raw)
-	}
 	if err != nil {
 		c.Close()
 		rx.Status = device.StatusConnectionError
-		if ctx.Err() != nil {
+		if errors.Is(err, errInvalidTPKT) {
+			rx.Status = device.StatusParseError
+		} else if ctx.Err() != nil {
 			rx.Status = device.StatusCancelled
 		} else {
 			var n net.Error

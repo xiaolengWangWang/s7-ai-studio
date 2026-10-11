@@ -2,6 +2,7 @@ package device
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
@@ -15,6 +16,33 @@ type Value struct {
 	Text     string   `json:"text,omitempty"`
 	Raw      []byte   `json:"raw,omitempty"`
 	Elements []Value  `json:"elements,omitempty"`
+}
+
+// MarshalJSON includes the active scalar even when it is false, zero or empty.
+// Arrays carry their typed elements rather than a synthetic parent scalar.
+func (v Value) MarshalJSON() ([]byte, error) {
+	stored := struct {
+		Type     DataType `json:"type"`
+		Integer  *string  `json:"integer,omitempty"`
+		Boolean  *bool    `json:"boolean,omitempty"`
+		Real     *float64 `json:"real,omitempty"`
+		Text     *string  `json:"text,omitempty"`
+		Raw      []byte   `json:"raw,omitempty"`
+		Elements []Value  `json:"elements,omitempty"`
+	}{Type: v.Type, Raw: v.Raw, Elements: v.Elements}
+	if len(v.Elements) == 0 {
+		switch v.Type {
+		case "BOOL":
+			stored.Boolean = &v.Boolean
+		case "REAL", "LREAL":
+			stored.Real = &v.Real
+		case "STRING":
+			stored.Text = &v.Text
+		case "BYTE", "SINT", "USINT", "WORD", "INT", "UINT", "DWORD", "DINT", "UDINT", "LWORD", "LINT", "ULINT":
+			stored.Integer = &v.Integer
+		}
+	}
+	return json.Marshal(stored)
 }
 
 func EncodeValue(a Address, v Value) ([]byte, error) {

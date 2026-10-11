@@ -23,6 +23,43 @@ func TestValueInt64Precision(t *testing.T) {
 	}
 }
 
+func TestValueJSONKeepsActiveZeroFields(t *testing.T) {
+	for _, tc := range []struct {
+		value    Value
+		field    string
+		expected string
+	}{
+		{Value{Type: "BOOL"}, "boolean", "false"},
+		{Value{Type: "REAL"}, "real", "0"},
+		{Value{Type: "LREAL"}, "real", "0"},
+		{Value{Type: "STRING"}, "text", `""`},
+	} {
+		t.Run(string(tc.value.Type), func(t *testing.T) {
+			b, err := json.Marshal(tc.value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var fields map[string]json.RawMessage
+			if err = json.Unmarshal(b, &fields); err != nil {
+				t.Fatal(err)
+			}
+			if string(fields[tc.field]) != tc.expected {
+				t.Fatalf("active zero value missing: %s", b)
+			}
+			for _, other := range []string{"integer", "boolean", "real", "text"} {
+				if other != tc.field && fields[other] != nil {
+					t.Fatalf("unrelated scalar field %s: %s", other, b)
+				}
+			}
+		})
+	}
+	array := Value{Type: "REAL", Elements: []Value{{Type: "REAL"}, {Type: "REAL", Real: 1}}}
+	b, err := json.Marshal(array)
+	if err != nil || !bytes.Contains(b, []byte(`"real":0`)) {
+		t.Fatalf("zero array element missing: %s %v", b, err)
+	}
+}
+
 func TestValueScalarWireTypes(t *testing.T) {
 	for _, tc := range []struct {
 		kind  DataType

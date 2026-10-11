@@ -1,0 +1,12 @@
+[
+    {
+        "Path":  "D:\\workspace\\s7-ai-studio\\bin\\s7-cli.exe",
+        "Algorithm":  "SHA256",
+        "Hash":  "8AC86968F9411443FB9FCD696E2F58E4461F2A01D01645FA86D1D6DD45742365"
+    },
+    {
+        "Path":  "D:\\workspace\\s7-ai-studio\\bin\\s7-sim.exe",
+        "Algorithm":  "SHA256",
+        "Hash":  "BD9D790980AEA6D779E55B4F473AC1BA8115D0E4D55692B99D61C18C5247C248"
+    }
+]

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"s7-ai-studio/internal/device"
@@ -105,5 +106,70 @@ func TestMigrationPreservesUnknownProtocol(t *testing.T) {
 	got, e := r.Packets(1, 10)
 	if e != nil || len(got) != 1 || got[0].Protocol != "VENDOR_FUTURE" || len(got[0].Targets) != 0 || got[0].Legacy.Address != 70000 {
 		t.Fatalf("%+v %v", got, e)
+	}
+}
+
+func TestLegacyEventsFileMissingColumnsReadOnly(t *testing.T) {
+	path := legacyFile(t, "MODBUS_TCP")
+	db, err := sql.Open(driverName, writeDSN(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`INSERT INTO events VALUES(1,1,1000,'READ_FAIL','old failure')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &Recorder{}
+	got, err := r.EventsFile(path, 1)
+	if err != nil || len(got) != 1 || got[0].Kind != "READ_FAIL" || got[0].Detail != "old failure" || got[0].Window != 0 || got[0].Analysis != "" || len(got[0].RX) != 0 || len(got[0].TX) != 0 {
+		t.Fatalf("old log cannot be read: %+v %v", got, err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || sha256.Sum256(before) != sha256.Sum256(after) {
+		t.Fatal("old log query changed archive")
+	}
+}
+
+func TestRecorderKeepsZeroValueJSON(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "zero.sqlite3")
+	r, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := r.StartSession(device.ProtocolS7TCP, "synthetic", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _ := device.ParseAddress("M0.0", "BOOL", 1)
+	r.Record(id, device.Event{Time: time.Now(), Protocol: device.ProtocolS7TCP, Dir: device.DirRX, Operation: "READ", Results: []device.EventResult{{Read: &device.ReadResult{Address: a, Quality: "GOOD", Value: device.Value{Type: "BOOL"}}}}})
+	if err = r.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := readDatabase(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var metadata string
+	if err = db.QueryRow(`SELECT metadata FROM packets WHERE session_id=?`, id).Scan(&metadata); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains([]byte(metadata), []byte(`"boolean":false`)) {
+		t.Fatalf("false value missing from archive: %s", metadata)
+	}
+	got, err := r.PacketsFile(path, id, 1)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("%+v %v", got, err)
+	}
+	b, err := json.Marshal(got[0].Results[0].Read.Value)
+	if err != nil || !bytes.Contains(b, []byte(`"boolean":false`)) {
+		t.Fatalf("false value lost in round trip: %s %v", b, err)
 	}
 }

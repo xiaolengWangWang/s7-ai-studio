@@ -517,7 +517,13 @@ func (r *Recorder) Events(session int64) ([]Event, error) {
 	if columns["data_codec"] {
 		codecColumn = "data_codec"
 	}
-	rows, err := r.db.Query(`SELECT time, kind, detail, window, analysis, tx, rx, `+codecColumn+` FROM events WHERE session_id = ? ORDER BY id`, session)
+	optional := func(name, fallback string) string {
+		if columns[name] {
+			return name
+		}
+		return fallback
+	}
+	rows, err := r.db.Query(`SELECT time, kind, detail, `+optional("window", "0")+`, `+optional("analysis", "''")+`, `+optional("tx", "NULL")+`, `+optional("rx", "NULL")+`, `+codecColumn+` FROM events WHERE session_id = ? ORDER BY id`, session)
 	if err != nil {
 		return nil, err
 	}

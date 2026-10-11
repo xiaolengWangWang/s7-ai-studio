@@ -3,22 +3,33 @@ package s7
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 )
 
+var errInvalidTPKT = errors.New("invalid TPKT header or length")
+
 func ReadTPKT(r io.Reader, limit int) ([]byte, error) {
+	payload, _, err := readTPKT(r, limit)
+	return payload, err
+}
+
+// readTPKT preserves the received wire, including partial or invalid headers.
+func readTPKT(r io.Reader, limit int) (payload, wire []byte, err error) {
 	var h [4]byte
-	if _, e := io.ReadFull(r, h[:]); e != nil {
-		return nil, e
+	headerBytes, e := io.ReadFull(r, h[:])
+	if e != nil {
+		return nil, append([]byte(nil), h[:headerBytes]...), e
 	}
 	n := int(binary.BigEndian.Uint16(h[2:]))
 	if h[0] != 3 || h[1] != 0 || n < 7 || limit < 7 || n > limit || n > 65535 {
-		return nil, fmt.Errorf("invalid TPKT header or length %d", n)
+		return nil, append([]byte(nil), h[:]...), fmt.Errorf("%w %d", errInvalidTPKT, n)
 	}
-	b := make([]byte, n-4)
-	_, e := io.ReadFull(r, b)
-	return b, e
+	b := make([]byte, n)
+	copy(b, h[:])
+	received, e := io.ReadFull(r, b[4:])
+	return b[4 : 4+received], b[:4+received], e
 }
 func WriteTPKT(w io.Writer, payload []byte) error {
 	if len(payload) < 3 || len(payload) > 65531 {
