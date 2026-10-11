@@ -1,0 +1,37 @@
+﻿[
+    {
+        "name":  "read-initial",
+        "exit":  0,
+        "stdout":  "{\n  \"operation\": \"read\",\n  \"protocol\": \"S7_TCP\",\n  \"results\": [\n    {\n      \"address\": {\n        \"area\": \"DB\",\n        \"db\": 1,\n        \"type\": \"DINT\",\n        \"count\": 1,\n        \"original\": \"DB1.DBD0\"\n      },\n      \"value\": {\n        \"type\": \"DINT\",\n        \"integer\": \"42\",\n        \"raw\": \"AAAAKg==\"\n      },\n      \"quality\": \"GOOD\",\n      \"time\": \"2026-10-11T08:29:40.9812203Z\"\n    }\n  ]\n}"
+    },
+    {
+        "name":  "write-confirmed",
+        "exit":  0,
+        "stdout":  "{\n  \"operation\": \"write\",\n  \"result\": {\n    \"address\": {\n      \"area\": \"DB\",\n      \"db\": 1,\n      \"type\": \"DINT\",\n      \"count\": 1,\n      \"original\": \"DB1.DBD0\"\n    },\n    \"state\": \"CONFIRMED\",\n    \"segments\": [\n      {\n        \"address\": {\n          \"area\": \"DB\",\n          \"db\": 1,\n          \"type\": \"DINT\",\n          \"count\": 1,\n          \"original\": \"DB1.DBD0\"\n        },\n        \"state\": \"CONFIRMED\"\n      }\n    ]\n  }\n}"
+    },
+    {
+        "name":  "read-back",
+        "exit":  0,
+        "stdout":  "{\n  \"operation\": \"read\",\n  \"protocol\": \"S7_TCP\",\n  \"results\": [\n    {\n      \"address\": {\n        \"area\": \"DB\",\n        \"db\": 1,\n        \"type\": \"DINT\",\n        \"count\": 1,\n        \"original\": \"DB1.DBD0\"\n      },\n      \"value\": {\n        \"type\": \"DINT\",\n        \"integer\": \"123\",\n        \"raw\": \"AAAAew==\"\n      },\n      \"quality\": \"GOOD\",\n      \"time\": \"2026-10-11T08:29:41.1860167Z\"\n    }\n  ]\n}"
+    },
+    {
+        "name":  "mixed-items",
+        "exit":  1,
+        "stdout":  "{\n  \"operation\": \"read\",\n  \"protocol\": \"S7_TCP\",\n  \"results\": [\n    {\n      \"address\": {\n        \"area\": \"DB\",\n        \"db\": 1,\n        \"type\": \"DINT\",\n        \"count\": 1,\n        \"original\": \"DB1.DBD0\"\n      },\n      \"value\": {\n        \"type\": \"DINT\",\n        \"integer\": \"123\",\n        \"raw\": \"AAAAew==\"\n      },\n      \"quality\": \"GOOD\",\n      \"time\": \"2026-10-11T08:29:41.2786844Z\"\n    },\n    {\n      \"address\": {\n        \"area\": \"DB\",\n        \"db\": 9,\n        \"type\": \"DINT\",\n        \"count\": 1,\n        \"original\": \"DB9.DBD0\"\n      },\n      \"value\": {\n        \"type\": \"\"\n      },\n      \"quality\": \"BAD\",\n      \"time\": \"2026-10-11T08:29:41.2775164Z\",\n      \"error\": \"S7 item error 0x05\"\n    }\n  ]\n}"
+    },
+    {
+        "name":  "rejected-area",
+        "exit":  1,
+        "stdout":  "{\n  \"operation\": \"read\",\n  \"protocol\": \"S7_TCP\",\n  \"results\": [\n    {\n      \"address\": {\n        \"area\": \"DB\",\n        \"db\": 1,\n        \"type\": \"DINT\",\n        \"count\": 1,\n        \"original\": \"DB1.DBD0\"\n      },\n      \"value\": {\n        \"type\": \"\"\n      },\n      \"quality\": \"BAD\",\n      \"time\": \"2026-10-11T08:29:41.6683443Z\",\n      \"error\": \"S7 item error 0x03\"\n    }\n  ]\n}"
+    },
+    {
+        "name":  "unknown-write",
+        "exit":  1,
+        "stdout":  "{\n  \"operation\": \"write\",\n  \"result\": {\n    \"address\": {\n      \"area\": \"DB\",\n      \"db\": 1,\n      \"type\": \"DINT\",\n      \"count\": 1,\n      \"original\": \"DB1.DBD0\"\n    },\n    \"state\": \"UNKNOWN\",\n    \"error\": \"read tcp 127.0.0.1:58198-\\u003e127.0.0.1:21104: i/o timeout\",\n    \"segments\": [\n      {\n        \"address\": {\n          \"area\": \"DB\",\n          \"db\": 1,\n          \"type\": \"DINT\",\n          \"count\": 1,\n          \"original\": \"DB1.DBD0\"\n        },\n        \"state\": \"UNKNOWN\",\n        \"error\": \"read tcp 127.0.0.1:58198-\\u003e127.0.0.1:21104: i/o timeout\"\n      }\n    ]\n  }\n}"
+    },
+    {
+        "name":  "lost-ack-read-back",
+        "exit":  0,
+        "stdout":  "{\n  \"operation\": \"read\",\n  \"protocol\": \"S7_TCP\",\n  \"results\": [\n    {\n      \"address\": {\n        \"area\": \"DB\",\n        \"db\": 1,\n        \"type\": \"DINT\",\n        \"count\": 1,\n        \"original\": \"DB1.DBD0\"\n      },\n      \"value\": {\n        \"type\": \"DINT\",\n        \"integer\": \"99\",\n        \"raw\": \"AAAAYw==\"\n      },\n      \"quality\": \"GOOD\",\n      \"time\": \"2026-10-11T08:29:42.4895178Z\"\n    }\n  ]\n}"
+    }
+]

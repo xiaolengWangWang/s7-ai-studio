@@ -60,6 +60,9 @@ func testPeer(t *testing.T, mode string, size int) (string, *peerTrace) {
 				response = peerResponse(reference, []byte{0xf0, 0, 0, 1, 0, 1, byte(size >> 8), byte(size)}, nil)
 			case 4:
 				trace.reads.Add(1)
+				if mode == "close-second-read" && trace.reads.Load() == 2 {
+					return
+				}
 				select {
 				case trace.readStarted <- struct{}{}:
 				default:
@@ -141,6 +144,17 @@ func peerResponse(ref uint16, params, data []byte) []byte {
 	copy(b[12:], params)
 	copy(b[12+len(params):], data)
 	return b
+}
+
+func TestReadRetainsCompletedItemsAfterLaterBatchDisconnect(t *testing.T) {
+	target, _ := testPeer(t, "close-second-read", 64)
+	c := dialTest(t, target, time.Second)
+	first, _ := device.ParseAddress("DB1.DBD0", "DINT", 1)
+	second, _ := device.ParseAddress("DB1.DBB4", "RAW", 100)
+	results, err := c.Read(context.Background(), []device.Address{first, second})
+	if err == nil || len(results) != 2 || results[0].Quality != "GOOD" || results[0].Value.Integer != "0" || results[1].Quality != "UNKNOWN" {
+		t.Fatalf("completed item lost: %+v, %v", results, err)
+	}
 }
 func dialTest(t *testing.T, target string, timeout time.Duration) *Client {
 	t.Helper()

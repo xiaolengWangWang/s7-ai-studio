@@ -63,6 +63,10 @@ func (c *Client) Read(ctx context.Context, addresses []device.Address) ([]device
 	defer func() { c.finish(events) }()
 	results := make([]device.ReadResult, len(addresses))
 	raws := make([][]byte, len(addresses))
+	remaining := make([]int, len(addresses))
+	for _, part := range parts {
+		remaining[part.owner]++
+	}
 	for i, a := range addresses {
 		results[i] = device.ReadResult{Address: a, Quality: "UNKNOWN", Time: time.Now().UTC()}
 		raws[i] = make([]byte, a.ByteLength())
@@ -117,22 +121,20 @@ func (c *Client) Read(ctx context.Context, addresses []device.Address) ([]device
 			} else {
 				copy(raws[owner][part.offset:], item.Value.Raw)
 			}
+			remaining[owner]--
+			if remaining[owner] == 0 && results[owner].Quality != "BAD" {
+				v, decodeErr := device.DecodeValue(addresses[owner], raws[owner])
+				results[owner].Time = time.Now().UTC()
+				if decodeErr != nil {
+					results[owner].Quality = "BAD"
+					results[owner].Error = decodeErr.Error()
+				} else {
+					results[owner].Quality = "GOOD"
+					results[owner].Value = v
+				}
+			}
 		}
 		start = end
-	}
-	for i := range results {
-		if results[i].Quality == "BAD" {
-			continue
-		}
-		v, e := device.DecodeValue(addresses[i], raws[i])
-		results[i].Time = time.Now().UTC()
-		if e != nil {
-			results[i].Quality = "BAD"
-			results[i].Error = e.Error()
-		} else {
-			results[i].Quality = "GOOD"
-			results[i].Value = v
-		}
 	}
 	return results, nil
 }
