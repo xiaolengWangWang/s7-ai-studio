@@ -25,9 +25,18 @@ try {
  if($readme.Contains('E-SafeNet') -or $readme.Contains([char]0) -or $readme.Contains('{{VERSION}}')) {throw 'Invalid package README'}
  [IO.File]::WriteAllText((Join-Path $stage 'README.txt'),($readme -replace '\r?\n',"`r`n"),[Text.UTF8Encoding]::new($true))
  [IO.File]::WriteAllText((Join-Path $stage 'VERSION.txt'),"$Version`r`n",[Text.UTF8Encoding]::new($true))
+ Add-Type -AssemblyName System.IO.Compression
  Add-Type -AssemblyName System.IO.Compression.FileSystem
  if(Test-Path -LiteralPath $zip){Remove-Item -LiteralPath $zip}
- [IO.Compression.ZipFile]::CreateFromDirectory($stage,$zip,[IO.Compression.CompressionLevel]::Optimal,$true)
+ $zipStream=[IO.File]::Open($zip,[IO.FileMode]::Create)
+ $writer=[IO.Compression.ZipArchive]::new($zipStream,[IO.Compression.ZipArchiveMode]::Create)
+ try {
+  foreach($name in @('S7AIStudio.exe','README.txt','VERSION.txt')) {
+   $entry=$writer.CreateEntry("$([IO.Path]::GetFileName($stage))/$name",[IO.Compression.CompressionLevel]::Optimal)
+   $input=[IO.File]::OpenRead((Join-Path $stage $name));$output=$entry.Open()
+   try {$input.CopyTo($output)} finally {$input.Dispose();$output.Dispose()}
+  }
+ } finally {$writer.Dispose();$zipStream.Dispose()}
  $archive=[IO.Compression.ZipFile]::OpenRead($zip)
  try {$readmeEntry=$archive.Entries | Where-Object {$_.FullName.EndsWith('/README.txt')};$reader=[IO.StreamReader]::new($readmeEntry.Open(),[Text.Encoding]::UTF8);try{$packaged=$reader.ReadToEnd();if(-not $packaged.Contains($Version) -or -not $packaged.Contains('50 MB') -or $packaged.Contains('E-SafeNet')){throw 'Archive README verification failed'}}finally{$reader.Dispose()}}finally{$archive.Dispose()}
  $hash=(Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
