@@ -1,8 +1,24 @@
 # S7 AI Studio
 
-参考 `modbus-ai-studio` 的分层架构，为西门子 PLC 建立统一的通讯、诊断和报文记录工具。目前完成**阶段 A：经典 S7 TCP 核心、命令行和合成模拟器**，尚未发布正式版本。
+为西门子 PLC 提供经典 S7 TCP 通讯、诊断和报文记录工具。`0.2.0` 包含 **Windows x64 单工作区 GUI 预览版**、命令行和合成模拟器。
 
-当前可运行的入口是 `s7-cli` 和 `s7-sim`。桌面界面、Web、AI 工具集、OPC UA、PPI、S5 和跨平台安装包属于后续阶段。仓库中的界面资源、更新器及打包脚本来自架构参考，不能视为这些入口已完成。
+当前入口为 `s7-ai`、`s7-cli` 和 `s7-sim`。Web、AI 工具集、OPC UA、PPI、S5 和其他平台安装包属于后续阶段；选择型号档案不代表实机认证。
+
+## Windows GUI
+
+从 [GitHub Releases](https://github.com/xiaolengWangWang/s7-ai-studio/releases) 下载 Windows x64 ZIP，解压后双击 `S7AIStudio.exe`，无需安装 Go 或 MinGW。需要支持 OpenGL 的图形驱动。
+
+点击“启动本机演示”读取 `DB1.DBD0` 的 DINT 42。勾选“允许写入”，输入 123 并确认目标、地址、类型和值，查看写入状态与独立读回结果。现场连接需要明确的 `host:port` 和正确的高级参数。默认只读，UNKNOWN 不自动重试写入，通讯失败后需要手动重新连接。
+
+记录保存到 `%AppData%\S7AIStudio\records`，按天 / 50 MB 轮转；保存错误显示在窗口底部。报文页可查看真实 TX/RX 字节，正常关闭会排空记录并释放本机演示端口。本版只经过合成对端验证，没有真实 PLC 认证。
+
+本机构建（需要 Go 和 Windows x64 MinGW）：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File build/windows.ps1 -Version 0.2.0 -CompilerRoot D:\tools\winlibs-gcc16\mingw64
+```
+
+产物位于 `dist/windows-gui/`，包括绿色 ZIP、SHA-256 校验和与构建清单。
 
 ## 构建与运行
 

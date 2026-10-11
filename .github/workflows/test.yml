@@ -1,6 +1,7 @@
 name: test
 
 on:
+  workflow_dispatch:
   # 只测分支：发版推 tag 时，tag 指向的提交已经在 main 上测过。
   push:
     branches: ['**']
@@ -22,7 +23,7 @@ jobs:
         if: runner.os == 'Linux'
         # 软件渲染也需要中文字体，避免缺字时反复查找字体拖慢 race 测试。
         run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev fonts-noto-cjk
-      - run: go vet ./...
+      - run: go vet -tags ci ./...
       - name: 测试纯 Go 通讯和 SQLite 驱动
         if: runner.os == 'Linux'
         env:
@@ -30,13 +31,13 @@ jobs:
         run: go test -count=1 ./internal/device ./internal/profile ./internal/s7 ./internal/simulator ./internal/cli ./internal/recorder ./tests
       - name: 测试（界面测试用 Fyne 的软件渲染驱动，不需要显卡）
         if: runner.os != 'Windows'
-        run: go test -race -count=1 -timeout 15m ./...
+        run: go test -race -tags ci -count=1 -timeout 15m ./...
       - name: 测试（Windows），界面截图存下来检查中文字体和布局
         if: runner.os == 'Windows'
         run: |
           New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\snapshots" | Out-Null
           $env:S7_AI_SNAPSHOT = "$env:RUNNER_TEMP\snapshots"
-          go test -count=1 -timeout 15m ./...
+          go test -tags ci -count=1 -timeout 15m ./...
       - name: 上传 Windows 界面截图
         if: always() && runner.os == 'Windows'
         uses: actions/upload-artifact@v4
@@ -44,3 +45,16 @@ jobs:
           name: windows-snapshots
           path: ${{ runner.temp }}/snapshots
           if-no-files-found: ignore
+      - name: 构建 Windows x64 GUI 绿色包
+        if: runner.os == 'Windows'
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File build/windows.ps1 -Version 0.2.0
+      - name: 上传 Windows GUI 安装包与校验文件
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-gui-package
+          path: |
+            dist/windows-gui/*.zip
+            dist/windows-gui/SHA256SUMS.txt
+            dist/windows-gui/build-manifest.json
+          if-no-files-found: error

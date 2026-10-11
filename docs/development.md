@@ -11,6 +11,8 @@
 | `internal/recorder` | SQLite 存储、轮转、迁移与旧历史只读查询 |
 | `internal/cli`、`cmd/s7-cli` | 输入校验、文本/JSON 输出、写权限和记录生命周期 |
 | `cmd/s7-sim` | 模拟器参数、监听和退出生命周期 |
+| `internal/service` | 会话取消与代次、串行读写、轮询、独立读回、演示与记录生命周期 |
+| `internal/ui`、`cmd/s7-ai` | 中文 Fyne GUI、主线程刷新、写入确认、Windows 原生入口 |
 
 通用业务接口不使用站号或 Modbus 寄存器表示西门子地址。旧协议字段仅放在历史事件的 `Legacy` 中。Recorder 的新元数据带版本；没有元数据的旧库读取时动态检测列，不会因查看而修改文件。
 
@@ -22,7 +24,7 @@ Read 在发送前校验全部地址，按请求和回应预算分组。已完成
 
 ```powershell
 go mod tidy
-go vet ./...
+go vet -tags ci ./...
 go test -tags ci -count=1 -timeout 15m ./...
 go test ./internal/s7 -run '^$' -fuzz FuzzDecodePDU -fuzztime 10s
 go build -o bin/s7-cli.exe ./cmd/s7-cli
@@ -31,12 +33,14 @@ go build -o bin/s7-sim.exe ./cmd/s7-sim
 
 固定黄金报文来源见 `internal/s7/testdata/README.md`。测试同时使用手工报文对端和独立请求解析模拟器，覆盖碎片/粘包、长度上限、PDU 引用、部分失败、超时、取消、关闭、原生位写入、写回应丢失和数据库兼容。CLI 测试通过真实回环 TCP 调用驱动。
 
-Windows 本地默认 `CGO_ENABLED=0`，Recorder 使用纯 Go SQLite；没有 C 编译器时不能运行 Go race 检测。CI 的 Linux/macOS 检查使用 race，Linux 还单独检查纯 Go 构建。CI 尚未在远端触发，不能将本地通过当作所有操作系统均已通过。
+CLI 可使用 `CGO_ENABLED=0` 的纯 Go SQLite。Windows GUI 和 race 检测使用 CGO=1；本机 MinGW 位于 `D:\tools\winlibs-gcc16\mingw64`，CI 的 Windows 原生打包脚本也可从 PATH 查找 gcc.exe。测试使用 `-tags ci` 的 Fyne 软件驱动；Linux/macOS CI 使用 race，Linux 另检查纯 Go 核心。实际远端结果以 GitHub Actions 为准。
+
+GUI 构建入口为 `build/windows.ps1`，版本为 `0.2.0` / Windows 文件版本 `0.2.0.0`。原生验证命令 `S7AIStudio.exe --smoke-test <专用目录>` 只连接应用自己创建的回环合成对端，读取 42、写入 123 并读回、捕获原生画布、排空 SQLite，输出 `smoke.json`；普通启动不会自动连接或写入。服务测试覆盖默认只读、旧确认拒绝、UNKNOWN 不重试、部分 GOOD 结果、取消与记录健康状态。
 
 ## 后续阶段与发版边界
 
-阶段 A 交付核心和两个开发工具，不创建正式 release tag 或上传资产。
+阶段 A 已交付核心和两个开发工具；`0.2.0` 交付 Windows GUI 预览版及绿色包。
 
-后续按总体设计完成桌面/Web 操作界面与 AI 工具、OPC UA、PPI/S5/网关路线、实机兼容矩阵、五个平台产物及发版验证。当前已有打包模板依赖尚未实现的桌面/Web 入口，不能用于宣称正式版已经可发布。
+后续按总体设计完成 Web、AI 工具、OPC UA、PPI/S5/网关路线、实机兼容矩阵和其他平台产物。旧多平台打包模板仍依赖本版未提供的入口，不能作为所有平台已完成的证据。发布前检查当前提交的本地/远端测试、实际 PE 与运行库依赖、版本/图标/高 DPI 清单、解压运行证据与归档字节校验。
 
 每个系列/型号/固件记录真实使用的协议、工程前提、连接参数、读写能力和验证来源。合成对端测试只能证明本实现与测试协议报文一致，无法代替西门子全部系列的实机验证。

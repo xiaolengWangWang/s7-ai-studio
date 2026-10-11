@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
+	"s7-ai-studio/internal/device"
 	"strings"
 )
 
@@ -23,11 +25,18 @@ func (d *Desktop) packetPanel() fyne.CanvasObject {
 			return
 		}
 		e := d.snapshot.Packets[id]
-		d.wire.SetText(fmt.Sprintf("时间：%s\n方向：%s\n操作：%s\n引用：%d\n状态：%s\n错误：%s\n连接：%s\n\n真实报文字节（%d bytes）\n%s", e.Time.Local().Format("2006-01-02 15:04:05.000"), e.Dir, e.Operation, e.RequestID, e.Status, e.Error, e.ConnectionID, len(e.Raw), hex.Dump(e.Raw)))
+		d.wire.SetText(packetText(e))
 	}
 	split := container.NewHSplit(d.packets, d.wire)
 	split.Offset = .42
 	return container.NewBorder(widget.NewLabel("显示最近 256 条；握手及完整收发由记录器归档。"), nil, nil, nil, split)
+}
+func packetText(e device.Event) string {
+	reference := "—"
+	if len(e.Raw) >= 17 && e.Raw[0] == 3 && e.Raw[4] == 2 && e.Raw[5] == 0xf0 && e.Raw[7] == 0x32 {
+		reference = fmt.Sprint(binary.BigEndian.Uint16(e.Raw[11:13]))
+	}
+	return fmt.Sprintf("时间：%s\n方向：%s\n操作：%s\n请求 ID：%d\nPDU 引用：%s\n状态：%s\n错误：%s\n连接：%s\n\n真实报文字节（%d bytes）\n%s", e.Time.Local().Format("2006-01-02 15:04:05.000"), e.Dir, e.Operation, e.RequestID, reference, e.Status, e.Error, e.ConnectionID, len(e.Raw), hex.Dump(e.Raw))
 }
 func joinLogs(logs []string) string { return strings.Join(logs, "\n") }
 func (d *Desktop) logPanel() fyne.CanvasObject {
