@@ -5,6 +5,7 @@ package platform
 import (
 	"bytes"
 	"fmt"
+	"image/color"
 	"log"
 	"os"
 	"path/filepath"
@@ -29,6 +30,21 @@ func (t windowsTheme) Font(style fyne.TextStyle) fyne.Resource {
 		return t.bold
 	}
 	return t.regular
+}
+
+// Color 在浅色主题下加深状态色：Fyne 默认的绿/橙在白底上对比度不足 2:1，状态文字看不清。
+func (t windowsTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color.Color {
+	if variant == theme.VariantLight {
+		switch name {
+		case theme.ColorNameSuccess:
+			return color.NRGBA{R: 0x2e, G: 0x7d, B: 0x32, A: 0xff}
+		case theme.ColorNameWarning:
+			return color.NRGBA{R: 0xb4, G: 0x53, B: 0x09, A: 0xff}
+		case theme.ColorNameError:
+			return color.NRGBA{R: 0xc6, G: 0x28, B: 0x28, A: 0xff}
+		}
+	}
+	return t.Theme.Color(name, variant)
 }
 
 func (t windowsTheme) Size(name fyne.ThemeSizeName) float32 {
