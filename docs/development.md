@@ -35,11 +35,11 @@ go build -o bin/s7-sim.exe ./cmd/s7-sim
 
 CLI 可使用 `CGO_ENABLED=0` 的纯 Go SQLite。Windows GUI 和 race 检测使用 CGO=1；本机 MinGW 位于 `D:\tools\winlibs-gcc16\mingw64`，CI 的 Windows 原生打包脚本也可从 PATH 查找 gcc.exe。测试使用 `-tags ci` 的 Fyne 软件驱动；Linux/macOS CI 使用 race，Linux 另检查纯 Go 核心。实际远端结果以 GitHub Actions 为准。
 
-GUI 构建入口为 `build/windows.ps1`，版本为 `0.2.0` / Windows 文件版本 `0.2.0.0`。原生验证命令 `S7AIStudio.exe --smoke-test <专用目录>` 只连接应用自己创建的回环合成对端，读取 42、写入 123 并读回、捕获原生画布、排空 SQLite，输出 `smoke.json`；普通启动不会自动连接或写入。服务测试覆盖默认只读、旧确认拒绝、UNKNOWN 不重试、部分 GOOD 结果、取消与记录健康状态。
+GUI 构建入口为 `build/windows.ps1`，版本为 `0.3.0` / Windows 文件版本 `0.3.0.0`。原生验证命令 `S7AIStudio.exe --smoke-test <专用目录>` 只连接应用自己创建的回环合成对端，读取 42、写入 123 并读回、捕获原生画布、排空 SQLite，输出 `smoke.json`；普通启动不会自动连接或写入。服务测试覆盖默认只读、旧确认拒绝、UNKNOWN 不重试、部分 GOOD 结果、取消与记录健康状态。
 
 ## 后续阶段与发版边界
 
-阶段 A 已交付核心和两个开发工具；`0.2.0` 交付 Windows GUI 预览版及绿色包。
+阶段 A 已交付核心和两个开发工具；`0.2.0` 交付 Windows GUI 预览版及绿色包；`0.3.0` 优化 GUI：状态着色与进度提示、记住上次连接与点位输入（不含写入值）、回车提交、报文与日志复制、打开记录目录。
 
 后续按总体设计完成 Web、AI 工具、OPC UA、PPI/S5/网关路线、实机兼容矩阵和其他平台产物。旧多平台打包模板仍依赖本版未提供的入口，不能作为所有平台已完成的证据。发布前检查当前提交的本地/远端测试、实际 PE 与运行库依赖、版本/图标/高 DPI 清单、解压运行证据与归档字节校验。
 
