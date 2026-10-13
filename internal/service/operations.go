@@ -56,7 +56,7 @@ func (c *Controller) Write(ctx context.Context, req WriteRequest, approved bool)
 		return e
 	}
 	a := aa[0]
-	v, e := ParseValue(a, req.Value)
+	v, e := device.ParseValue(a, req.Value)
 	if e != nil {
 		return e
 	}

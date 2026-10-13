@@ -22,6 +22,25 @@ powershell -NoProfile -ExecutionPolicy Bypass -File build/windows.ps1 -Version 0
 
 产物位于 `dist/windows-gui/`，包括绿色 ZIP、SHA-256 校验和与构建清单。
 
+## viSCADA 物模型点表核对
+
+地址可直接填 viSCADA 物模型里 S7 属性标识的写法，类型由标识决定，不受“类型”下拉框和 `-type` 默认值影响：`DB1.R0`（REAL）、`DB1.X52.0`（BOOL）、`DB1.I4`（INT）、`DB1.W6`（WORD）、`DB1.DW8`（DWORD）、`DB1.DI12`（DINT）、`DB1.B0`（BYTE）。偏移与原生写法相同，如 `DB1.R0` 即 `DB1.DBD0` 按 REAL 读取。
+
+点表可以是 viSCADA 物模型导出的 `.xlsx`（优先读取“设备类属性信息”工作表），也可以是 UTF-8 或 GBK 编码的 `.csv`。程序按表头识别列：“属性标识/地址”为必需列；“属性名称”“标准化名称”“单位”可选；“模拟值/期望值”用于核对；原生地址需要“类型”列填写 S7 类型（如 REAL），位地址默认按 BOOL。viSCADA 的“数据类型”编码（1/3/6）不作为 S7 类型使用。无法解析、地址重复或期望值无效的行会被跳过并列出行号。每张表最多 1024 点。
+
+GUI 中点击“导入点表…”，地址框会换成表中全部点位；读取后结果表显示名称、单位和核对结论（一致 / 不一致 / 读取失败），表格上方汇总数量。“复制结果”按制表符分隔，可直接粘贴到 Excel。REAL 按 32 位精度显示和比较，例如期望值 `0.60` 与 PLC 中的 32 位浮点 0.6 判为一致（viSCADA 按 double 显示为 `0.6000000238418579`，是同一个值）。
+
+示例 `assets/examples/viscada-heat-station-s7.csv` 是热力站 S7 点表（DB1，39 个 REAL、8 个 BOOL，共 47 点）。不连接 PLC 时，可用模拟器按点表预置数据，再执行核对：
+
+```powershell
+.\bin\s7-sim.exe -listen 127.0.0.1:1102 -points assets\examples\viscada-heat-station-s7.csv
+.\bin\s7-cli.exe -target 127.0.0.1:1102 -points assets\examples\viscada-heat-station-s7.csv verify
+.\bin\s7-cli.exe -target 127.0.0.1:1102 -points assets\examples\viscada-heat-station-s7.csv -json verify
+```
+
+`verify` 全部读到且没有不一致时退出码为 `0`，否则为 `1`。没有期望值的点只读取，不核对。模拟器只回放点表里的值，用来检查点表和工具链路，不能替代实机核对；对实机核对时，PLC 侧 DB 仍须为非优化访问并允许 PUT/GET。
+
+本机若有透明加密软件，被加密的 `.csv`/`.xlsx` 对本程序显示为密文，导入时会提示“已被 E-SafeNet 透明加密”；请改用浏览器从 viSCADA 直接下载的原始文件。
 ## 构建与运行
 
 使用 `go.mod` 指定的 Go 工具链；运行构建后的程序不需要安装 Go。Windows PowerShell：
@@ -49,7 +68,7 @@ go build -o bin/s7-sim.exe ./cmd/s7-sim
 .\bin\s7-cli.exe -target 127.0.0.1:1102 -type DINT -record '.\通信 历史' read DB1.DBD0,DB9.DBD0
 ```
 
-所有参数放在 `read` / `write` 前。目标必须明确指定为 `host:port`；工具不扫描网络。默认只读，写入必须带 `-allow-write`。`-help` 列出全部参数。Linux/macOS 构建时去掉 `.exe`，运行时使用 `./bin/s7-cli` 和 `./bin/s7-sim`。
+所有参数放在 `read` / `write` / `verify` 前。目标必须明确指定为 `host:port`；工具不扫描网络。默认只读，写入必须带 `-allow-write`。`-help` 列出全部参数。Linux/macOS 构建时去掉 `.exe`，运行时使用 `./bin/s7-cli` 和 `./bin/s7-sim`。
 
 退出码：`0` 全部成功；`1` 通讯错误、部分失败或记录失败；`2` 参数错误或未实现路线。多个读取地址用逗号分隔；同一命令使用相同类型和数量。JSON 的整数值使用十进制字符串，保留完整的 64 位精度。
 

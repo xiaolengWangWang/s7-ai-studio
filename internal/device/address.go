@@ -34,6 +34,19 @@ var dbAddress = regexp.MustCompile(`^DB([0-9]+)\.DB([BWDXL])([0-9]+)(?:\.([0-9]+
 var areaAddress = regexp.MustCompile(`^([MIQ])([BWDL]?)([0-9]+)(?:\.([0-9]+))?$`)
 var stringType = regexp.MustCompile(`^STRING\[([0-9]+)\]$`)
 
+// viSCADA 物模型的 S7 属性标识（telegraf s7comm 写法），如 DB1.R0、DB1.X52.0：类型由标识决定。
+var platformAddress = regexp.MustCompile(`^DB([0-9]+)\.(X|B|W|DW|I|DI|R)([0-9]+)(?:\.([0-9]+))?$`)
+var platformTypes = map[string]DataType{"X": "BOOL", "B": "BYTE", "W": "WORD", "DW": "DWORD", "I": "INT", "DI": "DINT", "R": "REAL"}
+
+// PlatformType 返回 viSCADA 属性标识隐含的类型；不是该写法时返回 false。
+func PlatformType(text string) (DataType, bool) {
+	m := platformAddress.FindStringSubmatch(strings.ToUpper(strings.TrimSpace(text)))
+	if m == nil {
+		return "", false
+	}
+	return platformTypes[m[2]], true
+}
+
 func TypeSize(kind DataType) int {
 	switch kind {
 	case "BOOL", "BYTE", "SINT", "USINT", "RAW":
@@ -120,6 +133,20 @@ func ParseAddress(text string, kind DataType, count int) (Address, error) {
 		a.Area = AreaDB
 		a.DBNumber = uint16(n)
 		suffix, off, bit = m[2], m[3], m[4]
+	} else if m := platformAddress.FindStringSubmatch(t); m != nil {
+		n, e := strconv.ParseUint(m[1], 10, 16)
+		if e != nil {
+			return a, fmt.Errorf("invalid DB number: %w", e)
+		}
+		if want := platformTypes[m[2]]; a.Type != want {
+			return a, fmt.Errorf("viSCADA 标识 %s 对应 %s，不能按 %s 读写", a.Original, want, a.Type)
+		}
+		a.Area = AreaDB
+		a.DBNumber = uint16(n)
+		off, bit = m[3], m[4]
+		if m[2] == "X" {
+			suffix = "X"
+		}
 	} else if m := areaAddress.FindStringSubmatch(t); m != nil {
 		a.Area = Area(m[1])
 		suffix, off, bit = m[2], m[3], m[4]

@@ -40,6 +40,39 @@ func TestAddressValidation(t *testing.T) {
 	}
 }
 
+func TestViSCADAIdentifiers(t *testing.T) {
+	for _, tc := range []struct {
+		text   string
+		kind   DataType
+		offset uint32
+		bit    uint8
+	}{
+		{"DB1.R0", "REAL", 0, 0}, {"db1.x52.1", "BOOL", 52, 1}, {"DB1.I4", "INT", 4, 0},
+		{"DB1.W6", "WORD", 6, 0}, {"DB1.DW8", "DWORD", 8, 0}, {"DB1.DI12", "DINT", 12, 0}, {"DB1.B0", "BYTE", 0, 0},
+	} {
+		kind, ok := PlatformType(tc.text)
+		if !ok || kind != tc.kind {
+			t.Fatalf("%s: %s %v", tc.text, kind, ok)
+		}
+		a, err := ParseAddress(tc.text, kind, 1)
+		if err != nil || a.Area != AreaDB || a.DBNumber != 1 || a.ByteOffset != tc.offset || a.BitOffset != tc.bit || a.Original != tc.text {
+			t.Fatalf("%s: %+v %v", tc.text, a, err)
+		}
+	}
+	if _, ok := PlatformType("DB1.DBD0"); ok {
+		t.Fatal("native address treated as viSCADA identifier")
+	}
+	for _, tc := range []struct {
+		text  string
+		kind  DataType
+		count int
+	}{{"DB1.R0", "DINT", 1}, {"DB1.X52", "BOOL", 1}, {"DB1.R0.1", "REAL", 1}, {"DB1.X52.8", "BOOL", 1}, {"DB1.X52.0", "BOOL", 2}} {
+		if _, err := ParseAddress(tc.text, tc.kind, tc.count); err == nil {
+			t.Errorf("accepted %+v", tc)
+		}
+	}
+}
+
 func TestAddressStringAndSymbol(t *testing.T) {
 	a, err := ParseAddress("DB1.DBB2", "STRING[20]", 1)
 	if err != nil || a.StringLength != 20 || a.ByteLength() != 22 {

@@ -103,12 +103,12 @@ func TestValuesPreservePrecision(t *testing.T) {
 	for _, tc := range []struct {
 		kind, input, want string
 		count             int
-	}{{"BOOL", "false", "false", 1}, {"REAL", "0", "0", 1}, {"LINT", "-9223372036854775808", "-9223372036854775808", 1}, {"ULINT", "18446744073709551615", "18446744073709551615", 1}, {"INT", "1,-2,0", "1,-2,0", 3}, {"RAW", "AA,00", "aa,00", 2}, {"STRING[8]", "hello", "\"hello\"", 1}} {
+	}{{"BOOL", "false", "false", 1}, {"REAL", "0", "0", 1}, {"REAL", "0.6", "0.6", 1}, {"LREAL", "0.6", "0.6", 1}, {"REAL", "4200000.0", "4200000", 1}, {"LREAL", "1e-7", "1e-07", 1}, {"REAL", "-2.5", "-2.5", 1}, {"LINT", "-9223372036854775808", "-9223372036854775808", 1}, {"ULINT", "18446744073709551615", "18446744073709551615", 1}, {"INT", "1,-2,0", "1,-2,0", 3}, {"RAW", "AA,00", "aa,00", 2}, {"STRING[8]", "hello", "\"hello\"", 1}} {
 		a, e := device.ParseAddress("DB1.DBB0", device.DataType(tc.kind), tc.count)
 		if e != nil {
 			t.Fatal(e)
 		}
-		v, e := ParseValue(a, tc.input)
+		v, e := device.ParseValue(a, tc.input)
 		if e != nil {
 			t.Fatal(e)
 		}
@@ -120,7 +120,7 @@ func TestValuesPreservePrecision(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		if got := FormatValue(v); got != tc.want {
+		if got := device.FormatValue(v); got != tc.want {
 			t.Errorf("%s got %q want %q", tc.kind, got, tc.want)
 		}
 	}
@@ -175,7 +175,7 @@ func TestRejectedWritePreservesSessionAndPolling(t *testing.T) {
 	if err = c.Read(context.Background(), []Point{point}); err != nil {
 		t.Fatal("same session cannot read after rejection", err)
 	}
-	if got := c.Snapshot().Results; len(got) != 1 || FormatValue(got[0].Value) != "42" {
+	if got := c.Snapshot().Results; len(got) != 1 || device.FormatValue(got[0].Value) != "42" {
 		t.Fatalf("read after rejection: %+v", got)
 	}
 }
@@ -235,7 +235,7 @@ func TestDemoRecorderLifecycle(t *testing.T) {
 		t.Fatal(e)
 	}
 	s := c.Snapshot()
-	if len(s.Results) != 1 || FormatValue(s.Results[0].Value) != "42" || s.DemoTarget == "" {
+	if len(s.Results) != 1 || device.FormatValue(s.Results[0].Value) != "42" || s.DemoTarget == "" {
 		t.Fatalf("demo %+v", s)
 	}
 	if e := c.Write(context.Background(), WriteRequest{point, "123", s.Generation}, true); e != nil {

@@ -3,7 +3,6 @@ package cli
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -15,6 +14,7 @@ import (
 	"time"
 
 	"s7-ai-studio/internal/device"
+	"s7-ai-studio/internal/pointtable"
 	"s7-ai-studio/internal/profile"
 	"s7-ai-studio/internal/recorder"
 	"s7-ai-studio/internal/s7"
@@ -47,8 +47,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, dial dial
 	remoteText := fs.String("remote-tsap", "", "remote TSAP from PLC/gateway configuration")
 	vDB := fs.Int("v-db", -1, "explicit V/VM mapping DB number")
 	vOffset := fs.Uint("v-offset", 0, "explicit V/VM mapping base byte offset")
+	pointsFile := fs.String("points", "", "point table for verify: viSCADA property export (.xlsx) or .csv")
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "Usage: s7-cli [flags] read ADDRESS[,ADDRESS...] [COUNT]\n       s7-cli [flags] -allow-write write ADDRESS VALUE[,VALUE...]")
+		fmt.Fprintln(stderr, "Usage: s7-cli [flags] read ADDRESS[,ADDRESS...] [COUNT]\n       s7-cli [flags] -allow-write write ADDRESS VALUE[,VALUE...]\n       s7-cli [flags] -points TABLE verify\nviSCADA identifiers such as DB1.R0 and DB1.X52.0 carry their own type unless -type is given.")
 		fs.PrintDefaults()
 	}
 	inputError := func(err error) int { fmt.Fprintln(stderr, err); return 2 }
@@ -105,15 +106,43 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, dial dial
 	} else if *vOffset != 0 {
 		return inputError(fmt.Errorf("-v-offset requires -v-db"))
 	}
+	typed := false
+	fs.Visit(func(f *flag.Flag) { typed = typed || f.Name == "type" })
+	// viSCADA 标识自带类型；只有显式给出 -type 时才按 -type 校验。
+	kindOf := func(text string) device.DataType {
+		if t, ok := device.PlatformType(text); ok && !typed {
+			return t
+		}
+		return device.DataType(strings.ToUpper(*kind))
+	}
 	words := fs.Args()
-	if len(words) < 2 {
+	if len(words) < 2 && !(len(words) == 1 && words[0] == "verify") {
 		fs.Usage()
 		return 2
 	}
 	operation := words[0]
 	var addresses []device.Address
 	var value device.Value
+	var table pointtable.Table
 	switch operation {
+	case "verify":
+		if *pointsFile == "" || len(words) != 1 {
+			return inputError(fmt.Errorf("verify requires -points TABLE and no addresses"))
+		}
+		table, err = pointtable.Load(*pointsFile)
+		if err != nil {
+			return inputError(err)
+		}
+		for _, p := range table.Points {
+			a, e := p.Resolve()
+			if e != nil {
+				return inputError(e)
+			}
+			addresses = append(addresses, a)
+		}
+		for _, s := range table.Skipped {
+			fmt.Fprintln(stderr, "skipped:", s)
+		}
 	case "read":
 		if len(words) > 3 {
 			return inputError(fmt.Errorf("read expects address list and optional count"))
@@ -130,7 +159,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, dial dial
 			return inputError(fmt.Errorf("at most 1024 read addresses are allowed"))
 		}
 		for _, text := range texts {
-			a, e := profile.ResolveAddress(p, text, device.DataType(strings.ToUpper(*kind)), count)
+			a, e := profile.ResolveAddress(p, text, kindOf(text), count)
 			if e != nil {
 				return inputError(e)
 			}
@@ -144,14 +173,14 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, dial dial
 			return inputError(fmt.Errorf("write expects one address and value"))
 		}
 		count := 1
-		if !strings.HasPrefix(strings.ToUpper(*kind), "STRING[") {
+		if !strings.HasPrefix(string(kindOf(words[1])), "STRING[") {
 			count = len(strings.Split(words[2], ","))
 		}
-		a, e := profile.ResolveAddress(p, words[1], device.DataType(strings.ToUpper(*kind)), count)
+		a, e := profile.ResolveAddress(p, words[1], kindOf(words[1]), count)
 		if e != nil {
 			return inputError(e)
 		}
-		value, err = parseValue(a, words[2])
+		value, err = device.ParseValue(a, words[2])
 		if err != nil {
 			return inputError(err)
 		}
@@ -204,7 +233,19 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, dial dial
 		return 1
 	}
 	defer driver.Close()
-	if operation == "read" {
+	if operation == "verify" {
+		results, readErr := driver.Read(ctx, addresses)
+		code = 0
+		if readErr != nil {
+			fmt.Fprintln(stderr, readErr)
+			code = 1
+		}
+		var ok bool
+		ok, err = verifyReport(stdout, table, results, *asJSON)
+		if !ok {
+			code = 1
+		}
+	} else if operation == "read" {
 		results, readErr := driver.Read(ctx, addresses)
 		code = 0
 		if readErr != nil {
@@ -224,7 +265,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, dial dial
 			}{"read", device.ProtocolS7TCP, results})
 		} else {
 			for _, result := range results {
-				if _, e := fmt.Fprintf(stdout, "%s = %s [%s] %s\n", result.Address.String(), formatValue(result.Value), result.Quality, result.Error); e != nil {
+				if _, e := fmt.Fprintf(stdout, "%s = %s [%s] %s\n", result.Address.String(), device.FormatValue(result.Value), result.Quality, result.Error); e != nil {
 					err = e
 					break
 				}
@@ -267,56 +308,66 @@ func parseTSAP(text string) (*uint16, error) {
 	return &u, nil
 }
 
-func parseValue(a device.Address, text string) (device.Value, error) {
-	v := device.Value{Type: a.Type}
-	if a.Count > 1 {
-		one := a
-		one.Count = 1
-		for _, part := range strings.Split(text, ",") {
-			item, err := parseValue(one, strings.TrimSpace(part))
-			if err != nil {
-				return v, err
-			}
-			v.Elements = append(v.Elements, item)
-		}
-		return v, nil
-	}
-	var err error
-	switch a.Type {
-	case "BOOL":
-		v.Boolean, err = strconv.ParseBool(text)
-	case "REAL", "LREAL":
-		v.Real, err = strconv.ParseFloat(text, 64)
-	case "STRING":
-		v.Text = text
-	case "RAW":
-		v.Raw, err = hex.DecodeString(strings.TrimPrefix(text, "0x"))
-	default:
-		v.Integer = text
-	}
-	return v, err
+type verifyItem struct {
+	Row      int               `json:"row"`
+	Address  string            `json:"address"`
+	Name     string            `json:"name,omitempty"`
+	Standard string            `json:"standard_name,omitempty"`
+	Unit     string            `json:"unit,omitempty"`
+	Expected string            `json:"expected,omitempty"`
+	Value    string            `json:"value,omitempty"`
+	Verdict  string            `json:"verdict,omitempty"`
+	Result   device.ReadResult `json:"result"`
 }
 
-func formatValue(v device.Value) string {
-	if len(v.Elements) > 0 {
-		parts := make([]string, len(v.Elements))
-		for i, e := range v.Elements {
-			parts[i] = formatValue(e)
+// verifyReport 输出逐点核对结果；全部读到且没有不一致时 ok 为 true。
+func verifyReport(w io.Writer, table pointtable.Table, results []device.ReadResult, asJSON bool) (ok bool, err error) {
+	ok = len(results) == len(table.Points)
+	items := make([]verifyItem, 0, len(results))
+	verdicts := make([]string, 0, len(results))
+	for i, r := range results {
+		if i >= len(table.Points) {
+			break
 		}
-		return strings.Join(parts, ",")
+		p := table.Points[i]
+		it := verifyItem{Row: p.Row, Address: p.Address, Name: p.Name, Standard: p.Standard, Unit: p.Unit, Expected: p.Expected, Verdict: pointtable.Check(r, p.Expected), Result: r}
+		if r.Quality == "GOOD" {
+			it.Value = device.FormatValue(r.Value)
+		}
+		ok = ok && r.Quality == "GOOD" && (it.Verdict == "" || it.Verdict == pointtable.Match)
+		items = append(items, it)
+		verdicts = append(verdicts, it.Verdict)
 	}
-	switch v.Type {
-	case "BOOL":
-		return strconv.FormatBool(v.Boolean)
-	case "REAL", "LREAL":
-		return strconv.FormatFloat(v.Real, 'g', -1, 64)
-	case "STRING":
-		return strconv.Quote(v.Text)
-	case "RAW":
-		return hex.EncodeToString(v.Raw)
-	default:
-		return v.Integer
+	summary := fmt.Sprintf("%d 点：%s", len(items), pointtable.Tally(verdicts))
+	if asJSON {
+		return ok, emitJSON(w, struct {
+			Operation string       `json:"operation"`
+			Table     string       `json:"table"`
+			Sheet     string       `json:"sheet,omitempty"`
+			Passed    bool         `json:"passed"`
+			Summary   string       `json:"summary"`
+			Skipped   []string     `json:"skipped,omitempty"`
+			Items     []verifyItem `json:"items"`
+		}{"verify", table.Name, table.Sheet, ok, summary, table.Skipped, items})
 	}
+	for _, it := range items {
+		value := it.Value
+		if value == "" {
+			value = "—"
+		}
+		line := fmt.Sprintf("%s\t%s\t= %s [%s]", it.Address, it.Name, value, it.Result.Quality)
+		if it.Expected != "" {
+			line += fmt.Sprintf("\t期望 %s %s", it.Expected, it.Verdict)
+		}
+		if it.Result.Error != "" {
+			line += "\t" + it.Result.Error
+		}
+		if _, err = fmt.Fprintln(w, line); err != nil {
+			return ok, err
+		}
+	}
+	_, err = fmt.Fprintln(w, summary)
+	return ok, err
 }
 
 func emitJSON(w io.Writer, v any) error {

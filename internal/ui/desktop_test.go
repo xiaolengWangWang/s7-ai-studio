@@ -42,7 +42,7 @@ func TestDesktopDemoAndWriteConfirmation(t *testing.T) {
 	test.Tap(d.demoBtn)
 	d.workers.Wait()
 	d.refresh(c.Snapshot())
-	if len(d.rows) != 1 || d.rows[0][2] != "42" {
+	if len(d.rows) != 1 || d.rows[0][3] != "42" {
 		t.Fatalf("demo rows %v", d.rows)
 	}
 	d.allowWrite.SetChecked(true)
@@ -60,7 +60,7 @@ func TestDesktopDemoAndWriteConfirmation(t *testing.T) {
 	d.confirmation.Confirm()
 	d.workers.Wait()
 	d.refresh(c.Snapshot())
-	if !strings.Contains(d.writeStatus.Text, "CONFIRMED") || !strings.Contains(d.writeStatus.Text, "一致") || d.rows[0][2] != "123" {
+	if !strings.Contains(d.writeStatus.Text, "CONFIRMED") || !strings.Contains(d.writeStatus.Text, "一致") || d.rows[0][3] != "123" {
 		t.Fatalf("write status %q rows %v", d.writeStatus.Text, d.rows)
 	}
 }
@@ -86,7 +86,7 @@ func TestDesktopResultsAndRecordingError(t *testing.T) {
 		s := c.Snapshot()
 		s.Revision += 200
 		d.refresh(s)
-		if d.rows[0][2] != tc.input {
+		if d.rows[0][3] != tc.input {
 			t.Fatalf("%s lost: %v", tc.typ, d.rows)
 		}
 	}

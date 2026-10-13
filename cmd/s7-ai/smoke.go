@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"s7-ai-studio/internal/device"
 	"s7-ai-studio/internal/recorder"
 	"s7-ai-studio/internal/service"
 	"time"
@@ -34,7 +35,7 @@ func runSmoke(ctx context.Context, c *service.Controller, capture func() image.I
 	if s.Target != s.DemoTarget || s.DemoTarget == "" || len(s.Results) != 1 {
 		return fmt.Errorf("验证必须使用自有本机演示")
 	}
-	initial := service.FormatValue(s.Results[0].Value)
+	initial := device.FormatValue(s.Results[0].Value)
 	if initial != "42" {
 		return fmt.Errorf("初值 %s != 42", initial)
 	}
@@ -43,7 +44,7 @@ func runSmoke(ctx context.Context, c *service.Controller, capture func() image.I
 		return e
 	}
 	s = c.Snapshot()
-	if s.WriteResult == nil || s.WriteResult.State != "CONFIRMED" || s.Readback != "一致" || len(s.Results) != 1 || service.FormatValue(s.Results[0].Value) != "123" {
+	if s.WriteResult == nil || s.WriteResult.State != "CONFIRMED" || s.Readback != "一致" || len(s.Results) != 1 || device.FormatValue(s.Results[0].Value) != "123" {
 		return fmt.Errorf("写入/读回验证失败")
 	}
 	im := capture()

@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"s7-ai-studio/assets/icon"
+	"s7-ai-studio/internal/pointtable"
 	"s7-ai-studio/internal/service"
 	"s7-ai-studio/platform"
 	"sync"
@@ -38,7 +39,10 @@ type Desktop struct {
 	target, rack, slot, localTSAP, remoteTSAP, timeout, vdb, voffset, addresses, count, interval, writeValue *widget.Entry
 	kind                                                                                                     *widget.Select
 	connectBtn, disconnectBtn, demoBtn, stopDemoBtn, readBtn, pollBtn, stopPollBtn, writeBtn                 *widget.Button
-	copyPacketBtn, copyLogBtn, openRecordBtn                                                                 *widget.Button
+	copyPacketBtn, copyLogBtn, openRecordBtn, importBtn, clearTableBtn, copyResultBtn                        *widget.Button
+	tableInfo                                                                                                *widget.Label
+	pointTable                                                                                               *pointtable.Table
+	meta                                                                                                     map[string]pointtable.Point
 	allowWrite                                                                                               *widget.Check
 	confirmation                                                                                             *dialog.ConfirmDialog
 	table                                                                                                    *widget.Table
@@ -198,6 +202,8 @@ func (d *Desktop) updateControls() {
 	enable(d.pollBtn, ready && idle && !s.Polling)
 	visible(d.stopPollBtn, s.Polling)
 	enable(d.writeBtn, ready && idle && d.allowWrite.Checked)
+	enable(d.clearTableBtn, d.pointTable != nil)
+	enable(d.copyResultBtn, len(d.rows) > 0)
 	enable(d.copyPacketBtn, d.wire.Text != "")
 	enable(d.copyLogBtn, d.logs.Text != "")
 	visible(d.activity, !idle || s.State == "connecting")
@@ -231,9 +237,11 @@ func (d *Desktop) refresh(s service.Snapshot) {
 		if s.DemoTarget != "" && s.Target == s.DemoTarget {
 			d.target.SetText(s.Target)
 			d.family.SetSelected("s7-300")
-			d.addresses.SetText("DB1.DBD0")
-			d.kind.SetSelected("DINT")
-			d.count.SetText("1")
+			if d.pointTable == nil { // 已导入的点表保留，便于直接对演示对端读取
+				d.addresses.SetText("DB1.DBD0")
+				d.kind.SetSelected("DINT")
+				d.count.SetText("1")
+			}
 		}
 	}
 	d.snapshot = s
@@ -250,19 +258,12 @@ func (d *Desktop) refresh(s service.Snapshot) {
 	setText(d.status, text, stateImportance[s.State])
 	setText(d.lastError, s.LastError, widget.DangerImportance)
 	visible(d.lastError, s.LastError != "")
-	d.rows = nil
-	for _, r := range s.Results {
-		addr := r.Address.Original
-		if addr == "" {
-			addr = r.Address.String()
-		}
-		value := "—"
-		if r.Quality == "GOOD" {
-			value = service.FormatValue(r.Value)
-		}
-		d.rows = append(d.rows, []string{addr, string(r.Address.Type), value, r.Quality, r.Time.Local().Format("15:04:05.000"), r.Error})
-	}
+	rows, verdicts := d.resultRows(s.Results)
+	d.rows = rows
 	d.table.Refresh()
+	info, infoImportance := d.tableSummary(verdicts)
+	setText(d.tableInfo, info, infoImportance)
+	visible(d.tableInfo, info != "")
 	visible(d.emptyHint, len(d.rows) == 0)
 	writeText, importance := "写入默认关闭。勾选“允许写入”后，仍须在确认框核对目标、地址、类型与值。", widget.LowImportance
 	if r := s.WriteResult; r != nil {

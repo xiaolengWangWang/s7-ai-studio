@@ -1,15 +1,16 @@
-package service
+package device
 
 import (
 	"encoding/hex"
 	"fmt"
-	"s7-ai-studio/internal/device"
+	"math"
 	"strconv"
 	"strings"
 )
 
-func ParseValue(a device.Address, text string) (device.Value, error) {
-	v := device.Value{Type: a.Type}
+// ParseValue 把界面或点表里的文字转成该地址类型的值；数组用逗号分隔。
+func ParseValue(a Address, text string) (Value, error) {
+	v := Value{Type: a.Type}
 	if a.Count > 1 {
 		one := a
 		one.Count = 1
@@ -38,10 +39,11 @@ func ParseValue(a device.Address, text string) (device.Value, error) {
 			return v, fmt.Errorf("无效写入值: %w", e)
 		}
 	}
-	_, e := device.EncodeValue(a, v)
+	_, e := EncodeValue(a, v)
 	return v, e
 }
-func FormatValue(v device.Value) string {
+
+func FormatValue(v Value) string {
 	if len(v.Elements) > 0 {
 		parts := make([]string, len(v.Elements))
 		for i, x := range v.Elements {
@@ -52,8 +54,10 @@ func FormatValue(v device.Value) string {
 	switch v.Type {
 	case "BOOL":
 		return strconv.FormatBool(v.Boolean)
-	case "REAL", "LREAL":
-		return strconv.FormatFloat(v.Real, 'g', -1, 64)
+	case "REAL": // 按 32 位取最短写法：0.6 而不是 0.6000000238418579
+		return formatFloat(v.Real, 32)
+	case "LREAL":
+		return formatFloat(v.Real, 64)
 	case "STRING":
 		return strconv.Quote(v.Text)
 	case "RAW":
@@ -61,4 +65,12 @@ func FormatValue(v device.Value) string {
 	default:
 		return v.Integer
 	}
+}
+
+// formatFloat 常见量程用普通小数（4200000），过大过小才用指数。
+func formatFloat(f float64, bits int) string {
+	if a := math.Abs(f); a == 0 || a >= 1e-4 && a < 1e15 {
+		return strconv.FormatFloat(f, 'f', -1, bits)
+	}
+	return strconv.FormatFloat(f, 'g', -1, bits)
 }

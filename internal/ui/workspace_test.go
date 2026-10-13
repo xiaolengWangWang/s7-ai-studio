@@ -5,6 +5,7 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"time"
 
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
@@ -127,8 +128,11 @@ func TestDesktopStatusColorsAndToggles(t *testing.T) {
 	if !d.emptyHint.Hidden || !d.demoBtn.Hidden || d.stopDemoBtn.Hidden {
 		t.Fatal("demo controls or empty hint not toggled")
 	}
-	if cellImportance(d.rows[0], 3) != widget.SuccessImportance || cellImportance([]string{"", "", "", "BAD", "", "x"}, 3) != widget.DangerImportance {
+	if cellImportance(d.rows[0], 5) != widget.SuccessImportance || cellImportance([]string{"", "", "", "", "", "BAD", "", "x"}, 5) != widget.DangerImportance {
 		t.Fatal("quality colors wrong")
+	}
+	if cellImportance(d.rows[0], 4) != widget.MediumImportance || cellImportance([]string{"", "", "", "", "一致", "GOOD", "", ""}, 4) != widget.SuccessImportance || cellImportance([]string{"", "", "", "", "不一致（期望 1）", "GOOD", "", ""}, 4) != widget.DangerImportance {
+		t.Fatal("verdict colors wrong")
 	}
 	s := c.Snapshot()
 	s.Revision += 10
@@ -139,6 +143,77 @@ func TestDesktopStatusColorsAndToggles(t *testing.T) {
 	}
 	if writeImportance("CONFIRMED", "一致") != widget.SuccessImportance || writeImportance("CONFIRMED", "不一致") != widget.WarningImportance || writeImportance("UNKNOWN", "无法确认") != widget.WarningImportance || writeImportance("REJECTED", "") != widget.DangerImportance {
 		t.Fatal("write colors wrong")
+	}
+}
+
+func TestDesktopImportsPointTableAndVerifies(t *testing.T) {
+	d, c := desktop(t, "")
+	mem := simulator.NewMemory()
+	r0, _ := device.ParseAddress("DB1.R0", "REAL", 1)
+	b, _ := device.EncodeValue(r0, device.Value{Type: "REAL", Real: 85})
+	bit, _ := device.ParseAddress("DB1.X52.0", "BOOL", 1)
+	if e := mem.Set(r0, b); e != nil {
+		t.Fatal(e)
+	}
+	if e := mem.Set(bit, []byte{1}); e != nil {
+		t.Fatal(e)
+	}
+	srv, e := simulator.New(simulator.Options{Memory: mem})
+	if e != nil {
+		t.Fatal(e)
+	}
+	l, e := net.Listen("tcp", "127.0.0.1:0")
+	if e != nil {
+		t.Fatal(e)
+	}
+	done := make(chan struct{})
+	go func() { defer close(done); srv.Serve(context.Background(), l) }()
+	t.Cleanup(func() { srv.Close(); <-done })
+	if !d.clearTableBtn.Disabled() || !d.copyResultBtn.Disabled() || !d.tableInfo.Hidden {
+		t.Fatal("table controls enabled before import")
+	}
+	csv := "属性标识,属性名称,标准化名称,单位,模拟值\nDB1.R0,一次供温,m_001t,℃,85.0\nDB1.X52.0,阀门控制,m_valve_controltype,,false\nDB1.R4,无期望值,,,\nWHNB.PV,非 S7,,,\n"
+	if e := d.importTable("点表.csv", []byte(csv)); e != nil {
+		t.Fatal(e)
+	}
+	if d.addresses.Text != "DB1.R0, DB1.X52.0, DB1.R4" || d.count.Text != "1" || d.clearTableBtn.Disabled() || !strings.Contains(d.tableInfo.Text, "3 点 · 跳过 1 行 · 尚未读取") {
+		t.Fatalf("import state: %q %q", d.addresses.Text, d.tableInfo.Text)
+	}
+	d.kind.SetSelected("STRING[32]") // 点表与 viSCADA 标识不受“类型”下拉框影响
+	d.target.SetText(l.Addr().String())
+	if e := c.Connect(context.Background(), service.Config{Family: "s7-300", Target: l.Addr().String(), Rack: -1, Slot: -1, Timeout: 2 * time.Second}); e != nil {
+		t.Fatal(e)
+	}
+	d.refresh(c.Snapshot())
+	test.Tap(d.readBtn)
+	d.workers.Wait()
+	d.refresh(c.Snapshot())
+	if len(d.rows) != 3 {
+		t.Fatalf("rows %q (%s)", d.rows, c.Snapshot().LastError)
+	}
+	want := [][]string{
+		{"DB1.R0", "一次供温", "REAL", "85 ℃", "一致", "GOOD"},
+		{"DB1.X52.0", "阀门控制", "BOOL", "true", "不一致（期望 false）", "GOOD"},
+		{"DB1.R4", "无期望值", "REAL", "0", "", "GOOD"},
+	}
+	for i, w := range want {
+		if strings.Join(d.rows[i][:6], "|") != strings.Join(w, "|") {
+			t.Fatalf("row %d = %q, want %q", i, d.rows[i][:6], w)
+		}
+	}
+	if !strings.Contains(d.tableInfo.Text, "一致 1 · 不一致 1 · 读取失败 0 · 未核对 1") || d.tableInfo.Importance != widget.DangerImportance {
+		t.Fatalf("summary %q %v", d.tableInfo.Text, d.tableInfo.Importance)
+	}
+	test.Tap(d.copyResultBtn)
+	if got := d.app.Clipboard().Content(); !strings.HasPrefix(got, "地址\t名称\t类型\t值\t核对") || !strings.Contains(got, "DB1.R0\t一次供温\tREAL\t85 ℃\t一致") {
+		t.Fatalf("clipboard %q", got)
+	}
+	test.Tap(d.clearTableBtn)
+	if !d.tableInfo.Hidden || d.rows[0][1] != "" || d.rows[0][4] != "" {
+		t.Fatalf("table not cleared: %q", d.rows[0])
+	}
+	if e := d.importTable("坏.csv", []byte("名称\nx\n")); e == nil || d.pointTable != nil {
+		t.Fatal("bad table accepted")
 	}
 }
 
