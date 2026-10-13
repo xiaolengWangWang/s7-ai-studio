@@ -1,6 +1,6 @@
 # S7 AI Studio
 
-为西门子 PLC 提供经典 S7 TCP 通讯、诊断和报文记录工具。`0.3.0` 包含 **Windows x64 单工作区 GUI 预览版**、命令行和合成模拟器。
+为西门子 PLC 提供经典 S7 TCP 通讯、诊断和报文记录工具。`0.4.0` 包含 **Windows x64 单工作区 GUI 预览版**、命令行和合成模拟器。
 
 当前入口为 `s7-ai`、`s7-cli` 和 `s7-sim`。Web、AI 工具集、OPC UA、PPI、S5 和其他平台安装包属于后续阶段；选择型号档案不代表实机认证。
 
@@ -14,10 +14,12 @@
 
 0.3.0 优化了界面：顶部用颜色显示连接状态（绿色已连接、橙色连接中、红色失败），后台操作时显示进度；连接或读取成功后记住目标、系列、高级参数和点位，下次启动自动填入，写入值和“允许写入”不保存。目标框回车即连接，地址框回车即读取，写入值框回车只打开写入确认框。报文页可复制所选报文详情，日志可选中复制，窗口底部可直接打开记录目录。
 
+0.4.0 新增 viSCADA 物模型点表核对：地址可直接填 viSCADA 的 S7 属性标识（如 `DB1.R0`、`DB1.X52.0`），类型由标识决定，REAL 与 BOOL 可在同一次读取中混用；“导入点表…”读取 viSCADA 物模型导出的 xlsx 或 CSV，结果表显示名称、单位和核对结论，上方汇总一致 / 不一致数量，“复制结果”可直接粘贴到 Excel。REAL 按 32 位精度显示（0.6 而不是 0.6000000238418579）。详见下文“viSCADA 物模型点表核对”。
+
 本机构建（需要 Go 和 Windows x64 MinGW）：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File build/windows.ps1 -Version 0.3.0 -CompilerRoot D:\tools\winlibs-gcc16\mingw64
+powershell -NoProfile -ExecutionPolicy Bypass -File build/windows.ps1 -Version 0.4.0 -CompilerRoot D:\tools\winlibs-gcc16\mingw64
 ```
 
 产物位于 `dist/windows-gui/`，包括绿色 ZIP、SHA-256 校验和与构建清单。
