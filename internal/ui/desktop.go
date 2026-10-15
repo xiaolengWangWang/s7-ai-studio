@@ -74,7 +74,8 @@ func NewDesktop(a fyne.App, c *service.Controller, version string) *Desktop {
 	tabs := container.NewAppTabs(
 		container.NewTabItemWithIcon("点位与读写", theme.ListIcon(), d.pointsPanel()),
 		container.NewTabItemWithIcon("报文", theme.StorageIcon(), d.packetPanel()),
-		container.NewTabItemWithIcon("日志", theme.DocumentIcon(), d.logPanel()))
+		container.NewTabItemWithIcon("日志", theme.DocumentIcon(), d.logPanel()),
+		container.NewTabItemWithIcon("帮助", theme.HelpIcon(), helpPanel()))
 	body := container.NewVScroll(container.NewBorder(top, nil, nil, nil, tabs))
 	footer := container.NewBorder(widget.NewSeparator(), nil, nil, d.openRecordBtn, d.recordStatus)
 	d.win.SetContent(container.NewPadded(container.NewBorder(nil, footer, nil, nil, body)))

@@ -35,8 +35,8 @@ var areaAddress = regexp.MustCompile(`^([MIQ])([BWDL]?)([0-9]+)(?:\.([0-9]+))?$`
 var stringType = regexp.MustCompile(`^STRING\[([0-9]+)\]$`)
 
 // viSCADA 物模型的 S7 属性标识（telegraf s7comm 写法），如 DB1.R0、DB1.X52.0：类型由标识决定。
-var platformAddress = regexp.MustCompile(`^DB([0-9]+)\.(X|B|W|DW|I|DI|R)([0-9]+)(?:\.([0-9]+))?$`)
-var platformTypes = map[string]DataType{"X": "BOOL", "B": "BYTE", "W": "WORD", "DW": "DWORD", "I": "INT", "DI": "DINT", "R": "REAL"}
+var platformAddress = regexp.MustCompile(`^(DB|PE|PA|MK)([0-9]+)\.(LR|LI|DW|DI|X|B|C|W|I|R|S)([0-9]+)(?:\.([0-9]+))?$`)
+var platformTypes = map[string]DataType{"X": "BOOL", "B": "BYTE", "C": "CHAR", "W": "WORD", "DW": "DWORD", "I": "INT", "DI": "DINT", "LI": "LINT", "R": "REAL", "LR": "LREAL"}
 
 // PlatformType 返回 viSCADA 属性标识隐含的类型；不是该写法时返回 false。
 func PlatformType(text string) (DataType, bool) {
@@ -44,12 +44,22 @@ func PlatformType(text string) (DataType, bool) {
 	if m == nil {
 		return "", false
 	}
-	return platformTypes[m[2]], true
+	if m[3] == "S" {
+		if m[5] == "" {
+			return "", false
+		}
+		length, err := strconv.Atoi(m[5])
+		if err != nil {
+			return "", false
+		}
+		return DataType(fmt.Sprintf("STRING[%d]", length)), true
+	}
+	return platformTypes[m[3]], true
 }
 
 func TypeSize(kind DataType) int {
 	switch kind {
-	case "BOOL", "BYTE", "SINT", "USINT", "RAW":
+	case "BOOL", "BYTE", "CHAR", "SINT", "USINT", "RAW":
 		return 1
 	case "WORD", "INT", "UINT":
 		return 2
@@ -134,18 +144,39 @@ func ParseAddress(text string, kind DataType, count int) (Address, error) {
 		a.DBNumber = uint16(n)
 		suffix, off, bit = m[2], m[3], m[4]
 	} else if m := platformAddress.FindStringSubmatch(t); m != nil {
-		n, e := strconv.ParseUint(m[1], 10, 16)
+		n, e := strconv.ParseUint(m[2], 10, 16)
 		if e != nil {
-			return a, fmt.Errorf("invalid DB number: %w", e)
+			return a, fmt.Errorf("invalid area number: %w", e)
 		}
-		if want := platformTypes[m[2]]; a.Type != want {
+		want, _ := PlatformType(t)
+		if m[3] == "S" {
+			want = "STRING"
+		}
+		if a.Type != want {
 			return a, fmt.Errorf("viSCADA 标识 %s 对应 %s，不能按 %s 读写", a.Original, want, a.Type)
 		}
-		a.Area = AreaDB
-		a.DBNumber = uint16(n)
-		off, bit = m[3], m[4]
-		if m[2] == "X" {
+		switch m[1] {
+		case "DB":
+			a.Area, a.DBNumber = AreaDB, uint16(n)
+		case "PE", "PA", "MK":
+			if n != 0 {
+				return a, fmt.Errorf("%s 区域编号须为 0", m[1])
+			}
+			a.Area = map[string]Area{"PE": AreaI, "PA": AreaQ, "MK": AreaM}[m[1]]
+		}
+		off, bit = m[4], m[5]
+		if m[3] == "X" {
 			suffix = "X"
+		} else if m[3] == "S" {
+			length, err := strconv.Atoi(bit)
+			if err != nil || length != a.StringLength {
+				return a, fmt.Errorf("STRING 地址须包含匹配的最大长度")
+			}
+		} else if m[3] != "S" && m[3] != "X" && bit != "" {
+			return a, fmt.Errorf("多余的地址参数")
+		}
+		if m[3] == "S" {
+			bit = ""
 		}
 	} else if m := areaAddress.FindStringSubmatch(t); m != nil {
 		a.Area = Area(m[1])

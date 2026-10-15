@@ -1,10 +1,12 @@
 # S7 AI Studio
 
-为西门子 PLC 提供经典 S7 TCP 通讯、诊断和报文记录工具。`0.4.0` 包含 **Windows x64 单工作区 GUI 预览版**、命令行和合成模拟器。
+为西门子 PLC 提供经典 S7 TCP 通讯、诊断和报文记录工具。`0.5.0` 包含 **Windows x64 单工作区 GUI 预览版**、命令行和合成模拟器。
 
 当前入口为 `s7-ai`、`s7-cli` 和 `s7-sim`。Web、AI 工具集、OPC UA、PPI、S5 和其他平台安装包属于后续阶段；选择型号档案不代表实机认证。
 
 ## Windows GUI
+
+连接、地址格式、viSCADA 点表导入与各系列前提见应用内“帮助”页，也可阅读[帮助手册](internal/ui/help.md)。
 
 从 [GitHub Releases](https://github.com/xiaolengWangWang/s7-ai-studio/releases) 下载 Windows x64 ZIP，解压后双击 `S7AIStudio.exe`，无需安装 Go 或 MinGW。需要支持 OpenGL 的图形驱动。
 
@@ -14,19 +16,21 @@
 
 0.3.0 优化了界面：顶部用颜色显示连接状态（绿色已连接、橙色连接中、红色失败），后台操作时显示进度；连接或读取成功后记住目标、系列、高级参数和点位，下次启动自动填入，写入值和“允许写入”不保存。目标框回车即连接，地址框回车即读取，写入值框回车只打开写入确认框。报文页可复制所选报文详情，日志可选中复制，窗口底部可直接打开记录目录。
 
+0.5.0 扩展 Telegraf S7 地址类型，加入 PE0/PA0/MK0 区域别名和应用内帮助手册；其他提供经典 S7 TCP 的型号可通过 `generic-s7-tcp` 与现场 Remote TSAP 配置接入。支持范围和前提见[帮助手册](internal/ui/help.md)。
+
 0.4.0 新增 viSCADA 物模型点表核对：地址可直接填 viSCADA 的 S7 属性标识（如 `DB1.R0`、`DB1.X52.0`），类型由标识决定，REAL 与 BOOL 可在同一次读取中混用；“导入点表…”读取 viSCADA 物模型导出的 xlsx 或 CSV，结果表显示名称、单位和核对结论，上方汇总一致 / 不一致数量，“复制结果”可直接粘贴到 Excel。REAL 按 32 位精度显示（0.6 而不是 0.6000000238418579）。详见下文“viSCADA 物模型点表核对”。
 
 本机构建（需要 Go 和 Windows x64 MinGW）：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File build/windows.ps1 -Version 0.4.0 -CompilerRoot D:\tools\winlibs-gcc16\mingw64
+powershell -NoProfile -ExecutionPolicy Bypass -File build/windows.ps1 -Version 0.5.0 -CompilerRoot D:\tools\winlibs-gcc16\mingw64
 ```
 
 产物位于 `dist/windows-gui/`，包括绿色 ZIP、SHA-256 校验和与构建清单。
 
 ## viSCADA 物模型点表核对
 
-地址可直接填 viSCADA 物模型里 S7 属性标识的写法，类型由标识决定，不受“类型”下拉框和 `-type` 默认值影响：`DB1.R0`（REAL）、`DB1.X52.0`（BOOL）、`DB1.I4`（INT）、`DB1.W6`（WORD）、`DB1.DW8`（DWORD）、`DB1.DI12`（DINT）、`DB1.B0`（BYTE）。偏移与原生写法相同，如 `DB1.R0` 即 `DB1.DBD0` 按 REAL 读取。
+地址可直接填 viSCADA 物模型采用的 Telegraf S7 标识，类型由标识决定，不受“类型”下拉框和 `-type` 默认值影响：`DB1.R0`（REAL）、`DB1.X52.0`（BOOL）、`DB1.I4`（INT）、`DB1.W6`（WORD）、`DB1.DW8`（DWORD）、`DB1.DI12`（DINT）、`DB1.B0`（BYTE），以及 `C`（CHAR）、`LI`（LINT）、`LR`（LREAL）、`S偏移.最大长度`（STRING）。`PE0`、`PA0`、`MK0` 分别对应输入 I、输出 Q、标志 M。偏移与原生写法相同，如 `DB1.R0` 即 `DB1.DBD0` 按 REAL 读取。完整示例与不支持的标识见[帮助手册](internal/ui/help.md)。
 
 点表可以是 viSCADA 物模型导出的 `.xlsx`（优先读取“设备类属性信息”工作表），也可以是 UTF-8 或 GBK 编码的 `.csv`。程序按表头识别列：“属性标识/地址”为必需列；“属性名称”“标准化名称”“单位”可选；“模拟值/期望值”用于核对；原生地址需要“类型”列填写 S7 类型（如 REAL），位地址默认按 BOOL。viSCADA 的“数据类型”编码（1/3/6）不作为 S7 类型使用。无法解析、地址重复或期望值无效的行会被跳过并列出行号。每张表最多 1024 点。
 
@@ -76,7 +80,7 @@ go build -o bin/s7-sim.exe ./cmd/s7-sim
 
 ## 当前能力与系列范围
 
-经典 S7 TCP 已实现 TPKT/COTP、Setup Communication、PDU 协商、DB/M/I/Q 绝对地址、多项读取、PDU 分批及原生 BOOL 位写入。支持 BOOL、8/16/32/64 位整数、REAL、LREAL、`STRING[n]` 与 RAW。`STRING[n]` 的长度包含 PLC 字符串容量，不包含两个头字节；写入按 ASCII 处理。RAW 写入按每字节十六进制逗号分隔，如 `AA,BB,CC`。
+经典 S7 TCP 已实现 TPKT/COTP、Setup Communication、PDU 协商、DB/M/I/Q 绝对地址、多项读取、PDU 分批及原生 BOOL 位写入。支持 BOOL、8/16/32/64 位整数、REAL、LREAL、`STRING[n]` 与 RAW。`STRING[n]` 的长度包含 PLC 字符串容量，不包含两个头字节；扩展字符按 Windows-1252 编解码。RAW 写入按每字节十六进制逗号分隔，如 `AA,BB,CC`。
 
 连接档案覆盖设计中的 S7-200/CN、SMART/G2、300、400、1200/G2、1500、ET 200 CPU、软件控制器、开放式控制器、Drive Controller、WinAC、SIPLUS、LOGO! 和 S5 路线。**档案是配置建议，不代表全部型号、固件或实机已经验证。**本阶段只经过合成对端和固定报文测试，没有实机认证。
 
@@ -85,6 +89,7 @@ go build -o bin/s7-sim.exe ./cmd/s7-sim
 | S7-300 | 默认 rack 0 / slot 2，可覆盖 |
 | S7-1200/G2、S7-1500、ET 200SP/200pro、软件/开放式/Drive Controller | 默认 rack 0 / slot 1，可覆盖；仅执行经典 S7 TCP |
 | S7-200/CN、SMART/G2、S7-400、ET 200S/X、WinAC、SIPLUS、LOGO! | 需要显式 `-remote-tsap`；实际连接前提由 CPU/通讯模块/网关配置决定 |
+| 其他提供经典 S7 TCP 的设备 | 可选 `generic-s7-tcp` 并填写现场 Remote TSAP；不代表实机认证 |
 | PPI、OPC UA、S5 专用协议 | 明确返回“未实现”，不会自动切换协议 |
 | S5、旧 LOGO! 的直接 S7 TCP | 档案不提供此路线，拒绝连接 |
 

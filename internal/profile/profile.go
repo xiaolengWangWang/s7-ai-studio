@@ -34,7 +34,7 @@ func Lookup(family string) (Profile, error) {
 	case "s7-200", "s7-200-cn":
 		p.Routes = append(p.Routes, "ppi")
 		p.NeedsTSAP = true
-	case "s7-200-smart", "s7-200-smart-g2", "s7-400", "et-200s", "et-200x", "winac", "siplus", "logo":
+	case "s7-200-smart", "s7-200-smart-g2", "s7-400", "et-200s", "et-200x", "winac", "siplus", "logo", "generic-s7-tcp":
 		p.NeedsTSAP = true
 	case "s5":
 		p.Routes = []string{"s5", "gateway"}

@@ -38,8 +38,12 @@ func (d *Desktop) points() ([]service.Point, error) {
 		if m, ok := d.meta[pointKey(a)]; ok {
 			p.Type, p.Count = m.Type, 1
 			if p.Type == "" {
-				resolved, _ := m.Resolve() // 导入时已校验
-				p.Type = resolved.Type
+				if inferred, ok := device.PlatformType(a); ok {
+					p.Type = inferred
+				} else {
+					resolved, _ := m.Resolve() // 导入时已校验
+					p.Type = resolved.Type
+				}
 			}
 		} else if t, ok := device.PlatformType(a); ok {
 			p.Type = t

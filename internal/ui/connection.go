@@ -30,7 +30,7 @@ func submit(e *widget.Entry, b *widget.Button) {
 	}
 }
 func (d *Desktop) connectionPanel() fyne.CanvasObject {
-	d.family = widget.NewSelect([]string{"s7-300", "s7-1200", "s7-1200-g2", "s7-1500", "s7-200", "s7-200-cn", "s7-200-smart", "s7-200-smart-g2", "s7-400", "et-200sp", "et-200pro", "et-200s", "et-200x", "software-controller", "open-controller", "drive-controller", "winac", "siplus", "logo"}, nil)
+	d.family = widget.NewSelect([]string{"s7-300", "s7-1200", "s7-1200-g2", "s7-1500", "s7-200", "s7-200-cn", "s7-200-smart", "s7-200-smart-g2", "s7-400", "et-200sp", "et-200pro", "et-200s", "et-200x", "software-controller", "open-controller", "drive-controller", "winac", "siplus", "logo", "generic-s7-tcp"}, nil)
 	d.family.SetSelected("s7-300")
 	d.target = entry("", "PLC 地址 host:port，例如 192.168.0.10:102")
 	d.connectBtn = widget.NewButtonWithIcon("连接", theme.LoginIcon(), func() {

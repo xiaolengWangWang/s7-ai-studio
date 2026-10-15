@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+
+	"golang.org/x/text/encoding/charmap"
 )
 
 type Value struct {
@@ -36,7 +38,7 @@ func (v Value) MarshalJSON() ([]byte, error) {
 			stored.Boolean = &v.Boolean
 		case "REAL", "LREAL":
 			stored.Real = &v.Real
-		case "STRING":
+		case "STRING", "CHAR":
 			stored.Text = &v.Text
 		case "BYTE", "SINT", "USINT", "WORD", "INT", "UINT", "DWORD", "DINT", "UDINT", "LWORD", "LINT", "ULINT":
 			stored.Integer = &v.Integer
@@ -80,16 +82,25 @@ func EncodeValue(a Address, v Value) ([]byte, error) {
 		}
 		copy(b, v.Raw)
 	case "STRING":
-		if len(v.Text) > a.StringLength {
+		encoded, err := charmap.Windows1252.NewEncoder().Bytes([]byte(v.Text))
+		if err != nil {
+			return nil, fmt.Errorf("STRING character is not representable as Windows-1252: %w", err)
+		}
+		if len(encoded) > a.StringLength {
 			return nil, fmt.Errorf("string exceeds maximum length")
 		}
-		for _, c := range []byte(v.Text) {
-			if c > 127 {
-				return nil, fmt.Errorf("STRING supports ASCII bytes; use RAW for a PLC-specific encoding")
-			}
+		b[0], b[1] = byte(a.StringLength), byte(len(encoded))
+		copy(b[2:], encoded)
+	case "CHAR":
+		runes := []rune(v.Text)
+		if len(runes) != 1 {
+			return nil, fmt.Errorf("CHAR requires one character")
 		}
-		b[0], b[1] = byte(a.StringLength), byte(len(v.Text))
-		copy(b[2:], v.Text)
+		encoded, ok := charmap.Windows1252.EncodeRune(runes[0])
+		if !ok {
+			return nil, fmt.Errorf("CHAR is not representable as one Windows-1252 byte")
+		}
+		b[0] = encoded
 	case "REAL":
 		if math.IsNaN(v.Real) || math.IsInf(v.Real, 0) || math.IsInf(float64(float32(v.Real)), 0) {
 			return nil, fmt.Errorf("non-finite REAL")
@@ -157,7 +168,13 @@ func DecodeValue(a Address, b []byte) (Value, error) {
 		if int(b[0]) != a.StringLength || b[1] > b[0] {
 			return v, fmt.Errorf("invalid STRING header")
 		}
-		v.Text = string(b[2 : 2+int(b[1])])
+		decoded, err := charmap.Windows1252.NewDecoder().Bytes(b[2 : 2+int(b[1])])
+		if err != nil {
+			return v, err
+		}
+		v.Text = string(decoded)
+	case "CHAR":
+		v.Text = string(charmap.Windows1252.DecodeByte(b[0]))
 	case "REAL":
 		v.Real = float64(math.Float32frombits(binary.BigEndian.Uint32(b)))
 		if math.IsNaN(v.Real) || math.IsInf(v.Real, 0) {

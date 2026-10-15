@@ -56,6 +56,39 @@ func TestTCPReadWriteRoundTrip(t *testing.T) {
 		t.Fatalf("%+v %v", r, e)
 	}
 }
+
+func TestTelegrafTypedRead(t *testing.T) {
+	m := simulator.NewMemory()
+	_, c := fixture(t, simulator.Options{Memory: m})
+	cases := []struct {
+		text string
+		raw  []byte
+	}{
+		{"DB1.C0", []byte{0xe4}},
+		{"DB1.LI8", []byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xd6}},
+		{"DB1.LR16", []byte{0x3f, 0xf4, 0, 0, 0, 0, 0, 0}},
+		{"DB1.S32.16", append([]byte{16, 2, 'O', 'K'}, make([]byte, 14)...)},
+	}
+	var addresses []device.Address
+	for _, tc := range cases {
+		kind, _ := device.PlatformType(tc.text)
+		a, err := device.ParseAddress(tc.text, kind, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := m.Set(a, tc.raw); err != nil {
+			t.Fatal(err)
+		}
+		addresses = append(addresses, a)
+	}
+	got, err := c.Read(context.Background(), addresses)
+	if err != nil || len(got) != 4 {
+		t.Fatalf("read = %+v, %v", got, err)
+	}
+	if got[0].Quality != "GOOD" || got[0].Value.Text != "ä" || got[1].Value.Integer != "-42" || got[2].Value.Real != 1.25 || got[3].Value.Text != "OK" {
+		t.Fatalf("read = %+v", got)
+	}
+}
 func TestSmallPDUAndMixedDBs(t *testing.T) {
 	_, c := fixture(t, simulator.Options{PDULimit: 128})
 	a, _ := device.ParseAddress("DB1.DBW0", "INT", 100)

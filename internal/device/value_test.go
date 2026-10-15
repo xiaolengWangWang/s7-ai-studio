@@ -120,3 +120,33 @@ func TestValueArrayPreservesEachElement(t *testing.T) {
 		t.Fatalf("%x %v", b, err)
 	}
 }
+
+func TestCHARExtendedByteRoundTrip(t *testing.T) {
+	a, err := ParseAddress("DB1.C0", "CHAR", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := DecodeValue(a, []byte{0xe4})
+	if err != nil || v.Text != "ä" {
+		t.Fatalf("decoded CHAR = %+v, %v", v, err)
+	}
+	b, err := EncodeValue(a, v)
+	if err != nil || !bytes.Equal(b, []byte{0xe4}) {
+		t.Fatalf("encoded CHAR = %x, %v", b, err)
+	}
+}
+
+func TestSTRINGExtendedByteRoundTrip(t *testing.T) {
+	a, err := ParseAddress("DB1.S0.5", "STRING[5]", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := DecodeValue(a, []byte{5, 1, 0xe4, 0, 0, 0, 0})
+	if err != nil || v.Text != "ä" {
+		t.Fatalf("decoded STRING = %+v, %v", v, err)
+	}
+	b, err := EncodeValue(a, v)
+	if err != nil || !bytes.Equal(b, []byte{5, 1, 0xe4, 0, 0, 0, 0}) {
+		t.Fatalf("encoded STRING = %x, %v", b, err)
+	}
+}

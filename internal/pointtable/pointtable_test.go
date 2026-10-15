@@ -48,6 +48,20 @@ func TestParseCSVTypeColumnAndGBK(t *testing.T) {
 	}
 }
 
+func TestParseTelegrafTypedPoints(t *testing.T) {
+	data := []byte("address,name,expected\nDB1.C0,状态字,ä\nDB1.LI8,累计量,-42\nDB1.LR16,精度值,1.25\nDB1.S24.16,故障文本,ä\n")
+	table, err := Parse("telegraf.csv", data)
+	if err != nil || len(table.Points) != 4 || len(table.Skipped) != 0 {
+		t.Fatalf("table = %+v, %v", table, err)
+	}
+	for i, want := range []device.DataType{"CHAR", "LINT", "LREAL", "STRING"} {
+		a, err := table.Points[i].Resolve()
+		if err != nil || a.Type != want {
+			t.Fatalf("point %d = %+v, %v", i, a, err)
+		}
+	}
+}
+
 func TestParseRejectsUnusableFiles(t *testing.T) {
 	for name, data := range map[string]string{
 		"a.txt":  "属性标识\nDB1.R0\n",

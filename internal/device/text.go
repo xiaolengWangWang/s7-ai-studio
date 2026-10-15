@@ -28,7 +28,7 @@ func ParseValue(a Address, text string) (Value, error) {
 			v.Boolean, e = strconv.ParseBool(strings.TrimSpace(text))
 		case "REAL", "LREAL":
 			v.Real, e = strconv.ParseFloat(strings.TrimSpace(text), 64)
-		case "STRING":
+		case "STRING", "CHAR":
 			v.Text = text
 		case "RAW":
 			v.Raw, e = hex.DecodeString(strings.TrimPrefix(strings.TrimSpace(text), "0x"))
@@ -58,7 +58,7 @@ func FormatValue(v Value) string {
 		return formatFloat(v.Real, 32)
 	case "LREAL":
 		return formatFloat(v.Real, 64)
-	case "STRING":
+	case "STRING", "CHAR":
 		return strconv.Quote(v.Text)
 	case "RAW":
 		return hex.EncodeToString(v.Raw)

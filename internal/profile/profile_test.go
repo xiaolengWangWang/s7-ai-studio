@@ -60,3 +60,18 @@ func TestUnsupportedFamilyRoute(t *testing.T) {
 		t.Fatal("unknown family accepted")
 	}
 }
+
+func TestGenericS7TCPRequiresConfiguredTSAP(t *testing.T) {
+	p, err := Lookup("generic-s7-tcp")
+	if err != nil || p.Verified {
+		t.Fatalf("profile = %+v, %v", p, err)
+	}
+	if _, _, err := ConnectionTSAP(p, 0, 1, nil, nil); err == nil {
+		t.Fatal("generic profile guessed a remote TSAP")
+	}
+	remote := uint16(0x0201)
+	_, got, err := ConnectionTSAP(p, 0, 1, nil, &remote)
+	if err != nil || got != remote {
+		t.Fatalf("remote TSAP = %04x, %v", got, err)
+	}
+}

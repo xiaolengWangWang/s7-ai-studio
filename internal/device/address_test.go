@@ -73,6 +73,63 @@ func TestViSCADAIdentifiers(t *testing.T) {
 	}
 }
 
+func TestTelegrafAdditionalDBTypes(t *testing.T) {
+	for _, tc := range []struct {
+		text   string
+		kind   DataType
+		offset uint32
+		length int
+	}{
+		{"DB1.C0", "CHAR", 0, 1},
+		{"DB1.LI8", "LINT", 8, 8},
+		{"DB1.LR16", "LREAL", 16, 8},
+		{"DB1.S24.32", "STRING[32]", 24, 34},
+		{"DB1.S24.032", "STRING[32]", 24, 34},
+	} {
+		kind, ok := PlatformType(tc.text)
+		if !ok || kind != tc.kind {
+			t.Fatalf("%s type = %s, %v", tc.text, kind, ok)
+		}
+		a, err := ParseAddress(tc.text, kind, 1)
+		if err != nil || a.ByteOffset != tc.offset || a.ByteLength() != tc.length {
+			t.Fatalf("%s address = %+v, %v", tc.text, a, err)
+		}
+	}
+	for _, text := range []string{"DB1.S24", "DB1.S24.0", "DB1.S24.255", "DB1.C0.1", "DB1.LR0.1"} {
+		if kind, ok := PlatformType(text); ok {
+			if _, err := ParseAddress(text, kind, 1); err == nil {
+				t.Errorf("accepted invalid Telegraf address %s", text)
+			}
+		}
+	}
+}
+
+func TestTelegrafProcessAndMarkerAreas(t *testing.T) {
+	for _, tc := range []struct {
+		text   string
+		area   Area
+		kind   DataType
+		offset uint32
+		bit    uint8
+	}{
+		{"PE0.X2.3", AreaI, "BOOL", 2, 3},
+		{"PA0.B4", AreaQ, "BYTE", 4, 0},
+		{"MK0.R8", AreaM, "REAL", 8, 0},
+	} {
+		kind, ok := PlatformType(tc.text)
+		if !ok || kind != tc.kind {
+			t.Fatalf("%s type = %s, %v", tc.text, kind, ok)
+		}
+		a, err := ParseAddress(tc.text, kind, 1)
+		if err != nil || a.Area != tc.area || a.ByteOffset != tc.offset || a.BitOffset != tc.bit {
+			t.Fatalf("%s address = %+v, %v", tc.text, a, err)
+		}
+	}
+	if _, err := ParseAddress("MK1.B0", "BYTE", 1); err == nil {
+		t.Fatal("ignored area index accepted")
+	}
+}
+
 func TestAddressStringAndSymbol(t *testing.T) {
 	a, err := ParseAddress("DB1.DBB2", "STRING[20]", 1)
 	if err != nil || a.StringLength != 20 || a.ByteLength() != 22 {

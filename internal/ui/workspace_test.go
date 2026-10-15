@@ -217,6 +217,21 @@ func TestDesktopImportsPointTableAndVerifies(t *testing.T) {
 	}
 }
 
+func TestDesktopReadsTelegrafStringFromImportedTable(t *testing.T) {
+	d, _ := desktop(t, "")
+	if err := d.importTable("points.csv", []byte("address,name\nDB1.S24.16,故障文本\n")); err != nil {
+		t.Fatal(err)
+	}
+	points, err := d.points()
+	if err != nil || len(points) != 1 {
+		t.Fatalf("points = %+v, %v", points, err)
+	}
+	a, err := device.ParseAddress(points[0].Address, points[0].Type, points[0].Count)
+	if err != nil || a.Type != "STRING" || a.StringLength != 16 {
+		t.Fatalf("resolved address = %+v, %v", a, err)
+	}
+}
+
 func TestPacketDetailsCanBeCopied(t *testing.T) {
 	d, c := desktop(t, "")
 	if !d.copyPacketBtn.Disabled() {
