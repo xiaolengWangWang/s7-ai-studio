@@ -1,0 +1,84 @@
+name: publish Windows release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version without v
+        required: true
+        type: string
+      test_run:
+        description: Successful test workflow run with windows-gui-package
+        required: true
+        type: string
+      release_id:
+        description: Existing GitHub draft release ID
+        required: true
+        type: string
+      sha256:
+        description: Expected Windows ZIP SHA-256
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ inputs.version }}
+      TEST_RUN: ${{ inputs.test_run }}
+      RELEASE_ID: ${{ inputs.release_id }}
+      EXPECTED_SHA256: ${{ inputs.sha256 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Download the tested Windows package
+        run: gh run download "$TEST_RUN" --repo "$GITHUB_REPOSITORY" --name windows-gui-package --dir dist/release-ci
+      - name: Verify commit, archive, and checksum
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, re, zipfile
+          root = pathlib.Path('dist/release-ci')
+          version = os.environ['VERSION']
+          expected_sha = os.environ['EXPECTED_SHA256']
+          assert re.fullmatch(r'\d+\.\d+\.\d+', version)
+          assert re.fullmatch(r'[0-9a-f]{64}', expected_sha)
+          manifest = json.loads((root / 'build-manifest.json').read_text())
+          assert manifest['version'] == version and manifest['dirty'] is False
+          assert manifest['sha256'] == expected_sha
+          name = f'S7AIStudio-{version}-Windows-x64.zip'
+          assert manifest['zip'] == name
+          data = (root / name).read_bytes()
+          assert len(data) == manifest['bytes']
+          assert hashlib.sha256(data).hexdigest() == expected_sha
+          assert (root / 'SHA256SUMS.txt').read_text().strip() == f'{expected_sha}  {name}'
+          with zipfile.ZipFile(root / name) as archive:
+              prefix = f'S7AIStudio-{version}-Windows-x64/'
+              assert set(archive.namelist()) == {prefix + x for x in ('S7AIStudio.exe', 'README.txt', 'VERSION.txt')}
+              exe = archive.read(prefix + 'S7AIStudio.exe')
+              assert exe.startswith(b'MZ')
+              assert hashlib.sha256(exe).hexdigest() == manifest['exeSha256']
+              assert archive.read(prefix + 'VERSION.txt').decode('utf-8-sig').strip() == version
+          pathlib.Path('/tmp/release-commit').write_text(manifest['commit'])
+          PY
+          test "$(git rev-list -n 1 "v$VERSION")" = "$(cat /tmp/release-commit)"
+      - name: Upload and verify GitHub asset
+        shell: bash
+        run: |
+          name="S7AIStudio-$VERSION-Windows-x64.zip"
+          gh release upload "v$VERSION" "dist/release-ci/$name" --repo "$GITHUB_REPOSITORY" --clobber
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" |
+            jq -e --arg name "$name" --arg digest "sha256:$EXPECTED_SHA256" \
+              '[.[] | select(.name == $name and .digest == $digest and .state == "uploaded")] | length == 1'
+      - name: Publish verified release
+        shell: bash
+        run: |
+          gh release edit "v$VERSION" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" |
+            jq -e --arg tag "v$VERSION" '.tag_name == $tag and .draft == false and .prerelease == false'
