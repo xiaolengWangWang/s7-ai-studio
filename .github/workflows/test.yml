@@ -47,7 +47,7 @@ jobs:
           if-no-files-found: ignore
       - name: 构建 Windows x64 GUI 绿色包
         if: runner.os == 'Windows'
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File build/windows.ps1 -Version 0.5.1
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File build/windows.ps1 -Version 0.6.0
       - name: 上传 Windows GUI 安装包与校验文件
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4

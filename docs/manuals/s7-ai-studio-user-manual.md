@@ -1,10 +1,10 @@
 # S7 AI Studio 操作手册
 
-> **版本:** v1.1
+> **版本:** v1.2
 
 ## 1 整体流程
 
-本手册以 S7 AI Studio `0.5.1` Windows x64 GUI 预览版为操作基准。工具通过经典 S7 TCP（ISO-on-TCP / RFC 1006）读取、写入西门子 PLC 的绝对地址，可用于现场连接验证、viSCADA 物模型属性核对及通信报文取证。
+本手册以 S7 AI Studio `0.6.0` Windows x64 GUI 正式版为操作基准。工具通过经典 S7 TCP（ISO-on-TCP / RFC 1006）读取、写入西门子 PLC 的绝对地址，可用于现场连接验证、viSCADA 物模型属性核对及通信报文取证。
 
 首次使用先完成本机演示，再连接现场 PLC。现场调试从一个已知地址开始，确认地址和数据类型正确后再导入整张点表。需要修改 PLC 数据时，单独执行写入确认和读回核实。
 
@@ -34,19 +34,20 @@ graph LR
 | 写入与读回 | 确认目标后写入，核实最终数据 | [第 9 章](#9%20%E5%86%99%E5%85%A5%E3%80%81%E7%A1%AE%E8%AE%A4%E4%B8%8E%E7%8B%AC%E7%AB%8B%E8%AF%BB%E5%9B%9E) |
 | 留存与退出 | 复制结果、保存报文、结束连接 | [第 10 章](#10%20%E6%9F%A5%E7%9C%8B%E6%8A%A5%E6%96%87%E3%80%81%E6%97%A5%E5%BF%97%E4%B8%8E%E6%9C%AC%E5%9C%B0%E8%AE%B0%E5%BD%95)、[第 11 章](#11%20%E7%BB%93%E6%9D%9F%E8%B0%83%E8%AF%95%E4%B8%8E%E4%BF%9D%E5%AD%98%E4%BA%A4%E4%BB%98%E6%9D%90%E6%96%99) |
 | 排查与验收 | 根据现象定位问题，完成现场交付检查 | [第 12 章](#12%20%E5%B8%B8%E8%A7%81%E9%97%AE%E9%A2%98%E4%B8%8E%E6%8E%92%E6%9F%A5)、[第 13 章](#13%20%E7%8E%B0%E5%9C%BA%E9%AA%8C%E8%AF%81%E4%B8%8E%E4%BA%A4%E6%8E%A5%E6%A3%80%E6%9F%A5) |
-| 下载与源码 | 获取 Windows 绿色包，查阅 Gitee / GitHub 源码和校验方法 | [第 15 章](#15%20%E4%B8%8B%E8%BD%BD%E3%80%81%E6%BA%90%E7%A0%81%E4%B8%8E%E6%A0%A1%E9%AA%8C) |
+| 软件内更新 | 检查正式版，校验、安装并重启软件 | [第 15 章](#15%20%E8%BD%AF%E4%BB%B6%E5%86%85%E6%9B%B4%E6%96%B0) |
+| 下载与源码 | 获取 Windows 绿色包，查阅 Gitee / GitHub 源码和校验方法 | [第 16 章](#16%20%E4%B8%8B%E8%BD%BD%E3%80%81%E6%BA%90%E7%A0%81%E4%B8%8E%E6%A0%A1%E9%AA%8C) |
 
-当前版本提供单工作区 GUI、本机演示、单次读取、轮询、受控写入、独立读回、点表导入、期望值核对、报文查看和本地记录。产品名称中的 AI 不表示本版已提供 AI 诊断；Web 工作区、OPC UA、PPI、MPI、PROFIBUS、S5 专用协议和自动更新均不属于本手册的可执行功能。
+当前版本提供单工作区 GUI、本机演示、单次读取、轮询、受控写入、独立读回、点表导入、期望值核对、报文查看和本地记录。产品名称中的 AI 不表示本版已提供 AI 诊断；Web 工作区、OPC UA、PPI、MPI、PROFIBUS、S5 专用协议均不属于本手册的可执行功能。
 
 ## 2 启动与认识界面
 
 ### 2.1 启动程序
 
-1. **进入**本手册最后的 [第 15 章：下载、源码与校验](#15%20%E4%B8%8B%E8%BD%BD%E3%80%81%E6%BA%90%E7%A0%81%E4%B8%8E%E6%A0%A1%E9%AA%8C)，获取 `0.5.1` Windows x64 GUI 绿色包。
-2. **确认**本地已取得 `S7AIStudio-0.5.1-Windows-x64.zip`，并完成文件完整性核对。
+1. **进入**本手册最后的 [第 16 章：下载、源码与校验](#16%20%E4%B8%8B%E8%BD%BD%E3%80%81%E6%BA%90%E7%A0%81%E4%B8%8E%E6%A0%A1%E9%AA%8C)，获取 `0.6.0` Windows x64 GUI 绿色包。
+2. **确认**本地已取得 `S7AIStudio-0.6.0-Windows-x64.zip`，并完成文件完整性核对。
 3. **解压**整个压缩包到有读写权限的本地目录，例如 `D:\Tools\S7AIStudio`。
 4. **双击**解压目录中的 `S7AIStudio.exe`。
-5. **核对**窗口顶部版本为 `0.5.1`，初始连接状态为 **「未连接」**。
+5. **核对**窗口顶部版本为 `0.6.0`，初始连接状态为 **「未连接」**。
 6. **打开** **「帮助」** 页签，确认能够查看连接和点表格式说明。
 
 运行 GUI 需要 Windows x64 和支持 OpenGL 的图形驱动。使用已发布的绿色包无需安装 Go 或 MinGW。程序首次启动不会自动连接现场 PLC，也不会自动执行写入。
@@ -587,28 +588,56 @@ go build -o bin/s7-sim.exe ./cmd/s7-sim
 CLI 的 `write` 返回 `CONFIRMED` 表示收到确认回应，不自动执行 GUI 中的独立读回流程，需另发 `read` 命令核实。`-record` 使用显式指定的目录；JSON 整数使用十进制字符串保存完整精度。
 
 地址规则的上游说明见 [Telegraf inputs.s7comm 文档](https://github.com/influxdata/telegraf/blob/master/plugins/inputs/s7comm/README.md)。本工具只支持本手册明确列出的地址与类型，不能把上游插件全部能力视为当前工具已实现的功能。
-## 15 下载、源码与校验
 
-### 15.1 下载 Windows 绿色包
+## 15 软件内更新
 
-1. **打开** [Gitee 0.5.1 发布页](https://gitee.com/sun_xuanqi/s7_ai_studio/releases/tag/v0.5.1)；也可使用 [GitHub 0.5.1 发布页](https://github.com/xiaolengWangWang/s7-ai-studio/releases/tag/v0.5.1)。
-2. **下载**发布附件 `S7AIStudio-0.5.1-Windows-x64.zip`。GitHub 可使用 [Windows x64 ZIP 直接下载](https://github.com/xiaolengWangWang/s7-ai-studio/releases/download/v0.5.1/S7AIStudio-0.5.1-Windows-x64.zip)。
+`0.6.0` 起提供软件内更新入口。更早版本首次升级时，先按最后一章手动下载并解压 `0.6.0`；之后可在软件内检查和安装新版本。
+
+1. **停止**轮询，保存需要保留的结果，断开 PLC 并停止本机演示。
+2. **切换** **「更新」** 页签，核对 **「当前版本」**。
+3. **点击** **「检查更新」**，等待 Gitee / GitHub 的正式版检查完成。
+4. **查看**最新版本、下载来源和更新说明；如果提示已是最新正式版，无需重复安装。
+5. **点击** **「下载并安装更新」**。
+6. **核对** **「安装软件更新」** 确认框中的目标版本，点击 **「下载并安装」**。
+7. **观察**下载进度；需要中止下载时点击 **「取消」**，之后可重新执行并续传。
+8. **等待**下载完成和 SHA-256 校验。只有校验通过的安装包才会进入安装流程，安装开始后不再提供取消。
+9. **等待**程序保存通信记录、关闭旧进程并启动新版本。
+10. **核对**重启后的顶部版本及 **「正式版」** 标识，按需要重新连接 PLC。
+
+| 显示或现象 | 含义 | 处理方法 |
+| --- | --- | --- |
+| **「发现新版本」** | 已取得比当前版本更新的正式版 | 阅读说明后确认是否安装 |
+| **「当前已是最新正式版」** | 当前版本无需升级 | 返回读写工作区继续使用 |
+| **「更新操作已取消」** | 检查或下载已停止 | 需要时重新检查或继续下载 |
+| **「安装包校验失败」** | 本地包与发布说明的 SHA-256 不一致 | 不会安装该包；重试下载或使用最后一章的手动下载入口 |
+| 安装按钮不可用 | 仍有 PLC / 演示连接、操作未结束，或当前运行方式不支持安装 | 先断开连接并等待后台操作结束；源码运行或程序被改名时使用手动下载 |
+| 目录不可写或替换失败 | 无法在程序目录完成替换 | 关闭占用文件的程序，或手动解压到可写目录 |
+| **「更新已安装，请手动重新启动」** | 文件已替换，但自动重启或退出保存遇到问题 | 留存提示和日志，关闭当前程序后从原目录重新启动 |
+
+工具会同时检查 Gitee 和 GitHub，优先选择最新且包含可用安装包与校验值的正式版；相同版本可使用镜像下载。网络中断时支持重试和断点续传。更新不会自动恢复 PLC 连接，也不会恢复 **「允许写入」** 的勾选状态。安装目录中的应用配置与通信记录仍按原有位置管理。
+
+## 16 下载、源码与校验
+
+### 16.1 下载 Windows 绿色包
+
+1. **打开** [Gitee 0.6.0 发布页](https://gitee.com/xiaolengwangwang/s7_ai_studio/releases/tag/v0.6.0)；也可使用 [GitHub 0.6.0 发布页](https://github.com/xiaolengWangWang/s7-ai-studio/releases/tag/v0.6.0)。
+2. **下载**发布附件 `S7AIStudio-0.6.0-Windows-x64.zip`。GitHub 可使用 [Windows x64 ZIP 直接下载](https://github.com/xiaolengWangWang/s7-ai-studio/releases/download/v0.6.0/S7AIStudio-0.6.0-Windows-x64.zip)。
 3. **核对**文件名和版本，使用下面的方法计算 SHA-256，与发布说明公布的该 ZIP 校验值逐字符比较。
 4. **解压**全部文件，确认目录中包含 `S7AIStudio.exe`、`README.txt` 和 `VERSION.txt`，再按 [第 2 章](#2%20%E5%90%AF%E5%8A%A8%E4%B8%8E%E8%AE%A4%E8%AF%86%E7%95%8C%E9%9D%A2) 启动程序。
 
 ```powershell
-Get-FileHash -Algorithm SHA256 .\S7AIStudio-0.5.1-Windows-x64.zip
+Get-FileHash -Algorithm SHA256 .\S7AIStudio-0.6.0-Windows-x64.zip
 ```
 
 校验值一致表示本地 ZIP 与发布的文件一致。若不一致，重新下载并再次核对。发布页上的自动生成 **Source code** 压缩包是源码，不是可以直接双击运行的 Windows GUI 绿色包。
 
-### 15.2 源码与版本记录
+### 16.2 源码与版本记录
 
 | 入口 | 地址 | 用途 |
 | --- | --- | --- |
-| Gitee 项目 | [sun_xuanqi/s7_ai_studio](https://gitee.com/sun_xuanqi/s7_ai_studio) | 浏览源码、README 和版本记录 |
-| Gitee 发布 | [Releases](https://gitee.com/sun_xuanqi/s7_ai_studio/releases) | 下载国内镜像发布附件 |
-| GitHub 项目 | [xiaolengWangWang/s7-ai-studio](https://github.com/xiaolengWangWang/s7-ai-studio) | 浏览源码、问题记录和持续集成结果 |
+| Gitee 项目 | [Gitee 项目源码](https://gitee.com/xiaolengwangwang/s7_ai_studio) | 浏览源码、README 和版本记录 |
+| Gitee 发布 | [Releases](https://gitee.com/xiaolengwangwang/s7_ai_studio/releases) | 下载国内镜像发布附件 |
+| GitHub 项目 | [GitHub 项目源码](https://github.com/xiaolengWangWang/s7-ai-studio) | 浏览源码、问题记录和持续集成结果 |
 | GitHub 发布 | [Releases](https://github.com/xiaolengWangWang/s7-ai-studio/releases) | 下载发布附件并核对版本说明 |
 
-`0.5.1` 增加导入点表后的逐点验证读取和实时进度；修复已停止轮询的排队任务覆盖验证结果，以及无期望值点读取失败时未显示失败结论的问题。GUI 绿色包保留经典 S7 TCP 的既有使用范围。
+`0.6.0` 为正式版，增加软件内版本检查、校验安装和重启，沿用新 Gitee 地址，并保留导入点表后的逐点验证读取、实时进度及既有经典 S7 TCP 功能。

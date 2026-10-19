@@ -82,17 +82,17 @@ func TestReadEachDisconnectPreservesPublishedResults(t *testing.T) {
 }
 
 func TestStoppedPollingCannotOverwritePointVerification(t *testing.T) {
-	srv, target := peer(t, simulator.Fault{})
-	c := newController(t, Options{})
-	connect(t, c, target)
+	d := &blockingDriver{}
+	c := newController(t, Options{Dial: func(context.Context, string, s7.Options) (device.Driver, error) { return d, nil }})
+	connect(t, c, "127.0.0.1:102")
 	if err := c.ReadEach(context.Background(), []Point{point, {Address: "MD0", Type: "DINT", Count: 1}}); err != nil {
 		t.Fatal(err)
 	}
-	before := srv.Stats().Reads
+	before := d.reads.Load()
 	// A poll already waiting for the session gate still carries this generation.
 	_ = c.read(context.Background(), []Point{point}, c.Snapshot().Generation)
 	s := c.Snapshot()
-	if srv.Stats().Reads != before || len(s.Results) != 2 || s.ReadCompleted != 2 || s.ReadTotal != 2 {
-		t.Fatalf("stopped poll replaced verification: %+v, requests %d -> %d", s, before, srv.Stats().Reads)
+	if d.reads.Load() != before || len(s.Results) != 2 || s.ReadCompleted != 2 || s.ReadTotal != 2 {
+		t.Fatalf("stopped poll replaced verification: %+v, requests %d -> %d", s, before, d.reads.Load())
 	}
 }

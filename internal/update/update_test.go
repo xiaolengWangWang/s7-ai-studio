@@ -43,6 +43,22 @@ func TestNewer(t *testing.T) {
 	}
 }
 
+func TestCleanupPreservesUnrelatedBackups(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"S7AIStudio.exe.old", "README.txt.old", "VERSION.txt.old", "customer-settings.old"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(name), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cleanupDir(dir)
+	if _, err := os.Stat(filepath.Join(dir, "S7AIStudio.exe.old")); !os.IsNotExist(err) {
+		t.Fatal("old program not removed")
+	}
+	if got := readFile(t, filepath.Join(dir, "customer-settings.old")); got != "customer-settings.old" {
+		t.Fatal("unrelated backup removed")
+	}
+}
+
 const body = `## 新功能
 
 - 导入四个数据区的点
@@ -168,8 +184,8 @@ func TestInstallZip(t *testing.T) {
 	pkg := filepath.Join(t.TempDir(), "p.zip")
 	writeZip(t, pkg, map[string]string{
 		"S7AIStudio-9.9.9-Windows-x64/S7AIStudio.exe": "new exe",
-		"S7AIStudio-9.9.9-Windows-x64/modbus-cli.exe":     "new cli",
-		"S7AIStudio-9.9.9-Windows-x64/README.txt":         "new readme",
+		"S7AIStudio-9.9.9-Windows-x64/modbus-cli.exe": "new cli",
+		"S7AIStudio-9.9.9-Windows-x64/README.txt":     "new readme",
 	})
 	exe, err := installZip(pkg, dir)
 	if err != nil {
@@ -458,7 +474,7 @@ func TestLatestSkipsIncompleteSource(t *testing.T) {
 	github := serve(complete)
 	defer github.Close()
 	for what, rel := range map[string]Release{
-		"还没上传安装包": {Tag: "v1.0.3", Body: sum + "  " + name},
+		"还没上传安装包":  {Tag: "v1.0.3", Body: sum + "  " + name},
 		"说明里没有校验值": {Tag: "v1.0.3", Assets: []Asset{{Name: name, URL: "http://gitee/p"}}},
 	} {
 		gitee := serve(rel)

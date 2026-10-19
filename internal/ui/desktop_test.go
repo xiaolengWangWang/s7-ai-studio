@@ -33,8 +33,8 @@ func TestDesktopReadOnlyByDefault(t *testing.T) {
 	if !d.writeBtn.Disabled() || !d.readBtn.Disabled() || d.allowWrite.Checked {
 		t.Fatal("write or disconnected read enabled")
 	}
-	if !strings.Contains(d.heading.Text, "0.2.0") || !strings.Contains(d.heading.Text, "预览") {
-		t.Fatal("missing version/preview")
+	if !strings.Contains(d.heading.Text, "0.2.0") || !strings.Contains(d.heading.Text, "正式版") || strings.Contains(d.heading.Text, "预览") {
+		t.Fatal("missing official version label")
 	}
 }
 func TestDesktopDemoAndWriteConfirmation(t *testing.T) {

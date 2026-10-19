@@ -51,6 +51,7 @@ type Desktop struct {
 	packetSelection                                                                                          int
 	wire, logs                                                                                               *widget.Label
 	logScroll                                                                                                *container.Scroll
+	updates                                                                                                  *updateView
 }
 
 func NewDesktop(a fyne.App, c *service.Controller, version string) *Desktop {
@@ -58,7 +59,7 @@ func NewDesktop(a fyne.App, c *service.Controller, version string) *Desktop {
 	d := &Desktop{app: a, controller: c, ctx: ctx, cancel: cancel, packetSelection: -1}
 	d.win = a.NewWindow("S7 AI Studio " + version)
 	d.win.SetIcon(icon.Application())
-	d.heading = widget.NewLabelWithStyle("S7 AI Studio  "+version+" · GUI 预览版", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	d.heading = widget.NewLabelWithStyle("S7 AI Studio  "+version+" · 正式版", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	d.status = widget.NewLabelWithStyle("未连接", fyne.TextAlignTrailing, fyne.TextStyle{Bold: true})
 	d.activity = widget.NewActivity()
 	d.activity.Hide()
@@ -71,11 +72,13 @@ func NewDesktop(a fyne.App, c *service.Controller, version string) *Desktop {
 	d.openRecordBtn = widget.NewButtonWithIcon("打开记录目录", theme.FolderOpenIcon(), d.openRecords)
 	header := container.NewBorder(nil, nil, d.heading, container.NewHBox(d.activity, d.status))
 	top := container.NewVBox(header, d.connectionPanel(), d.lastError)
+	d.updates = newUpdateView(d, version)
 	tabs := container.NewAppTabs(
 		container.NewTabItemWithIcon("点位与读写", theme.ListIcon(), d.pointsPanel()),
 		container.NewTabItemWithIcon("报文", theme.StorageIcon(), d.packetPanel()),
 		container.NewTabItemWithIcon("日志", theme.DocumentIcon(), d.logPanel()),
-		container.NewTabItemWithIcon("帮助", theme.HelpIcon(), helpPanel()))
+		container.NewTabItemWithIcon("帮助", theme.HelpIcon(), helpPanel()),
+		container.NewTabItemWithIcon("更新", theme.ViewRefreshIcon(), d.updates.panel()))
 	body := container.NewVScroll(container.NewBorder(top, nil, nil, nil, tabs))
 	footer := container.NewBorder(widget.NewSeparator(), nil, nil, d.openRecordBtn, d.recordStatus)
 	d.win.SetContent(container.NewPadded(container.NewBorder(nil, footer, nil, nil, body)))
@@ -192,7 +195,7 @@ func setText(l *widget.Label, text string, importance widget.Importance) {
 func (d *Desktop) updateControls() {
 	s := d.snapshot
 	ready := s.State == "connected"
-	idle := d.busy == 0
+	idle := d.busy == 0 && !d.updates.restarting
 	enable(d.connectBtn, idle)
 	enable(d.disconnectBtn, s.State == "connecting" || ready || s.State == "error")
 	visible(d.demoBtn, s.DemoTarget == "")
@@ -208,6 +211,7 @@ func (d *Desktop) updateControls() {
 	enable(d.copyResultBtn, len(d.rows) > 0)
 	enable(d.copyPacketBtn, d.wire.Text != "")
 	enable(d.copyLogBtn, d.logs.Text != "")
+	d.updates.refresh()
 	visible(d.activity, !idle || s.State == "connecting")
 	if d.activity.Visible() {
 		d.activity.Start()

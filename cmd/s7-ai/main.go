@@ -11,15 +11,19 @@ import (
 	"path/filepath"
 	"s7-ai-studio/internal/service"
 	"s7-ai-studio/internal/ui"
+	"s7-ai-studio/internal/update"
 	"s7-ai-studio/platform"
 	"time"
 )
 
-var version = "0.5.1"
+var version = "0.6.0"
 
 func main() {
 	smokeDir := flag.String("smoke-test", "", "验证自有回环演示并保存证据后退出")
 	flag.Parse()
+	if update.CanInstall() {
+		update.Cleanup()
+	}
 	platform.Setup()
 	platform.PrewarmFonts()
 	a := app.NewWithID("com.s7aistudio.desktop")

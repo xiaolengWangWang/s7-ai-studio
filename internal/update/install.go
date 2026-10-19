@@ -122,17 +122,11 @@ func extract(f *zip.File, dst string) error {
 	return w.Close()
 }
 
-// cleanupDir 删除 dir 里上次更新换下来的 *.old 文件和残留的解压目录。
+// cleanupDir only removes backups of files shipped in the Windows package.
 func cleanupDir(dir string) {
 	os.RemoveAll(filepath.Join(dir, stageDir))
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return
-	}
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), oldSuffix) {
-			os.Remove(filepath.Join(dir, e.Name()))
-		}
+	for _, name := range []string{mainExe, "README.txt", "VERSION.txt"} {
+		os.Remove(filepath.Join(dir, name+oldSuffix))
 	}
 }
 

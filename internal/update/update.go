@@ -25,7 +25,7 @@ import (
 // 发布安装包的仓库：GitHub 和它在 Gitee 上的镜像，两边发布同样的安装包和说明。
 const (
 	Repo      = "xiaolengWangWang/s7-ai-studio"
-	GiteeRepo = "sun_xuanqi/s7_ai_studio"
+	GiteeRepo = "xiaolengwangwang/s7_ai_studio"
 )
 
 // Source 是一个发布安装包的地方。
