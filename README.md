@@ -1,6 +1,6 @@
 # S7 AI Studio
 
-为西门子 PLC 提供经典 S7 TCP 通讯、诊断和报文记录工具。`0.5.0` 包含 **Windows x64 单工作区 GUI 预览版**、命令行和合成模拟器。
+为西门子 PLC 提供经典 S7 TCP 通讯、诊断和报文记录工具。`0.5.1` 包含 **Windows x64 单工作区 GUI 预览版**、命令行和合成模拟器。
 
 当前入口为 `s7-ai`、`s7-cli` 和 `s7-sim`。Web、AI 工具集、OPC UA、PPI、S5 和其他平台安装包属于后续阶段；选择型号档案不代表实机认证。
 
@@ -8,13 +8,15 @@
 
 连接、地址格式、viSCADA 点表导入与各系列前提见应用内“帮助”页，也可阅读[帮助手册](internal/ui/help.md)。
 
-从 [GitHub Releases](https://github.com/xiaolengWangWang/s7-ai-studio/releases) 下载 Windows x64 ZIP，解压后双击 `S7AIStudio.exe`，无需安装 Go 或 MinGW。需要支持 OpenGL 的图形驱动。
+从 [Gitee Releases](https://gitee.com/sun_xuanqi/s7_ai_studio/releases) 或 [GitHub Releases](https://github.com/xiaolengWangWang/s7-ai-studio/releases) 下载 Windows x64 ZIP，解压后双击 `S7AIStudio.exe`，无需安装 Go 或 MinGW。需要支持 OpenGL 的图形驱动。
 
 点击“启动本机演示”读取 `DB1.DBD0` 的 DINT 42。勾选“允许写入”，输入 123 并确认目标、地址、类型和值，查看写入状态与独立读回结果。现场连接需要明确的 `host:port` 和正确的高级参数。默认只读，UNKNOWN 不自动重试写入，通讯失败后需要手动重新连接。
 
 记录保存到 `%AppData%\S7AIStudio\records`，按天 / 50 MB 轮转；保存错误显示在窗口底部。报文页可查看真实 TX/RX 字节，正常关闭会排空记录并释放本机演示端口。本版只经过合成对端验证，没有真实 PLC 认证。
 
 0.3.0 优化了界面：顶部用颜色显示连接状态（绿色已连接、橙色连接中、红色失败），后台操作时显示进度；连接或读取成功后记住目标、系列、高级参数和点位，下次启动自动填入，写入值和“允许写入”不保存。目标框回车即连接，地址框回车即读取，写入值框回车只打开写入确认框。报文页可复制所选报文详情，日志可选中复制，窗口底部可直接打开记录目录。
+
+0.5.1 增加导入点表后的逐点验证读取：每完成一个地址即显示结果和进度；单点被拒绝时继续，通信中断时保留已完成结果并停止。修复已停止轮询的排队任务覆盖验证结果，以及无期望值的点读取失败时未显示失败结论的问题。详细操作见[在线手册](http://mrdoc.iheatingos.com/project-36/doc-16517/)和[本地手册](docs/manuals/s7-ai-studio-user-manual.md)。
 
 0.5.0 扩展 Telegraf S7 地址类型，加入 PE0/PA0/MK0 区域别名和应用内帮助手册；其他提供经典 S7 TCP 的型号可通过 `generic-s7-tcp` 与现场 Remote TSAP 配置接入。支持范围和前提见[帮助手册](internal/ui/help.md)。
 
@@ -23,7 +25,7 @@
 本机构建（需要 Go 和 Windows x64 MinGW）：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File build/windows.ps1 -Version 0.5.0 -CompilerRoot D:\tools\winlibs-gcc16\mingw64
+powershell -NoProfile -ExecutionPolicy Bypass -File build/windows.ps1 -Version 0.5.1 -CompilerRoot D:\tools\winlibs-gcc16\mingw64
 ```
 
 产物位于 `dist/windows-gui/`，包括绿色 ZIP、SHA-256 校验和与构建清单。
@@ -34,7 +36,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File build/windows.ps1 -Version 0
 
 点表可以是 viSCADA 物模型导出的 `.xlsx`（优先读取“设备类属性信息”工作表），也可以是 UTF-8 或 GBK 编码的 `.csv`。程序按表头识别列：“属性标识/地址”为必需列；“属性名称”“标准化名称”“单位”可选；“模拟值/期望值”用于核对；原生地址需要“类型”列填写 S7 类型（如 REAL），位地址默认按 BOOL。viSCADA 的“数据类型”编码（1/3/6）不作为 S7 类型使用。无法解析、地址重复或期望值无效的行会被跳过并列出行号。每张表最多 1024 点。
 
-GUI 中点击“导入点表…”，地址框会换成表中全部点位；读取后结果表显示名称、单位和核对结论（一致 / 不一致 / 读取失败），表格上方汇总数量。“复制结果”按制表符分隔，可直接粘贴到 Excel。REAL 按 32 位精度显示和比较，例如期望值 `0.60` 与 PLC 中的 32 位浮点 0.6 判为一致（viSCADA 按 double 显示为 `0.6000000238418579`，是同一个值）。
+GUI 中点击“导入点表…”，地址框会换成表中全部点位；点击“读取一次”按地址顺序逐点读取并更新进度，结果表逐项显示名称、单位和核对结论（一致 / 不一致 / 读取失败），表格上方汇总数量。“复制结果”按制表符分隔，可直接粘贴到 Excel。REAL 按 32 位精度显示和比较，例如期望值 `0.60` 与 PLC 中的 32 位浮点 0.6 判为一致（viSCADA 按 double 显示为 `0.6000000238418579`，是同一个值）。
 
 示例 `assets/examples/viscada-heat-station-s7.csv` 是热力站 S7 点表（DB1，39 个 REAL、8 个 BOOL，共 47 点）。不连接 PLC 时，可用模拟器按点表预置数据，再执行核对：
 

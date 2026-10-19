@@ -144,8 +144,14 @@ func (d *Desktop) pointsPanel() fyne.CanvasObject {
 			return
 		}
 		values := d.inputValues()
+		sequential := d.pointTable != nil
 		d.run(func(ctx context.Context) error {
-			e := d.controller.Read(ctx, p)
+			var e error
+			if sequential {
+				e = d.controller.ReadEach(ctx, p)
+			} else {
+				e = d.controller.Read(ctx, p)
+			}
 			if e == nil {
 				d.saveInputs(values)
 			}
@@ -260,7 +266,11 @@ func (d *Desktop) resultRows(results []device.ReadResult) ([][]string, []string)
 		if r.Address.Type == "STRING" {
 			typ = fmt.Sprintf("STRING[%d]", r.Address.StringLength)
 		}
-		rows = append(rows, []string{addr, m.Name, typ, value, verdict, r.Quality, r.Time.Local().Format("15:04:05.000"), r.Error})
+		when := "—"
+		if !r.Time.IsZero() {
+			when = r.Time.Local().Format("15:04:05.000")
+		}
+		rows = append(rows, []string{addr, m.Name, typ, value, verdict, r.Quality, when, r.Error})
 	}
 	return rows, verdicts
 }
@@ -279,10 +289,23 @@ func (d *Desktop) tableSummary(verdicts []string) (string, widget.Importance) {
 	if len(t.Skipped) > 0 {
 		text += fmt.Sprintf(" · 跳过 %d 行", len(t.Skipped))
 	}
+	if d.snapshot.ReadTotal > 0 {
+		state := "已逐点读取"
+		if d.snapshot.ReadingEach {
+			state = "逐点读取中"
+		}
+		text += fmt.Sprintf(" · %s %d/%d", state, d.snapshot.ReadCompleted, d.snapshot.ReadTotal)
+	}
 	if len(verdicts) == 0 {
+		if d.snapshot.ReadingEach {
+			return text, widget.WarningImportance
+		}
 		return text + " · 尚未读取", widget.MediumImportance
 	}
 	importance := widget.SuccessImportance
+	if d.snapshot.ReadingEach {
+		importance = widget.WarningImportance
+	}
 	for _, v := range verdicts {
 		if v != "" && v != pointtable.Match {
 			importance = widget.DangerImportance

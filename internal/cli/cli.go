@@ -234,7 +234,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, dial dial
 	}
 	defer driver.Close()
 	if operation == "verify" {
-		results, readErr := driver.Read(ctx, addresses)
+		results, readErr := device.ReadEach(ctx, driver, addresses, nil)
 		code = 0
 		if readErr != nil {
 			fmt.Fprintln(stderr, readErr)

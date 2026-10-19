@@ -136,6 +136,7 @@ func TestCheck(t *testing.T) {
 		{r, "", ""},
 		{r, "x", Invalid},
 		{device.ReadResult{Address: real, Quality: "BAD"}, "0.6", Failed},
+		{device.ReadResult{Address: real, Quality: "BAD"}, "", Failed},
 		{good(bit, device.Value{Type: "BOOL"}), "false", Match},
 		{good(bit, device.Value{Type: "BOOL"}), "1", Mismatch},
 	} {

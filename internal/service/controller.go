@@ -23,6 +23,8 @@ type Snapshot struct {
 	Revision, Generation                                                           uint64
 	State, Target, Family, DemoTarget, LastError, RecordDir, RecordError, Readback string
 	Polling                                                                        bool
+	ReadingEach                                                                    bool
+	ReadCompleted, ReadTotal                                                       int
 	Results                                                                        []device.ReadResult
 	WriteResult                                                                    *device.WriteResult
 	Packets                                                                        []device.Event
@@ -169,6 +171,7 @@ func (c *Controller) detachLocked(state string) *session {
 	c.stopPollLocked()
 	c.snap.Generation++
 	c.snap.State = state
+	c.snap.ReadingEach = false
 	c.snap.Revision++
 	if s != nil {
 		s.cancel()
@@ -228,6 +231,7 @@ func (c *Controller) Connect(ctx context.Context, cfg Config) error {
 	c.snap.Family = p.Family
 	c.snap.LastError = ""
 	c.snap.Results = nil
+	c.snap.ReadCompleted, c.snap.ReadTotal = 0, 0
 	c.snap.WriteResult = nil
 	c.snap.Readback = ""
 	c.logLocked("正在连接 " + cfg.Target)

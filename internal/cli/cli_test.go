@@ -109,7 +109,7 @@ func TestCLIReadsMixedViSCADAIdentifiers(t *testing.T) {
 	}
 }
 func TestCLIVerifyPointTable(t *testing.T) {
-	target, _, m := cliPeer(t)
+	target, srv, m := cliPeer(t)
 	a, _ := device.ParseAddress("DB1.R0", "REAL", 1)
 	b, _ := device.EncodeValue(a, device.Value{Type: "REAL", Real: 85})
 	if e := m.Set(a, b); e != nil {
@@ -126,6 +126,9 @@ func TestCLIVerifyPointTable(t *testing.T) {
 	code := Run(context.Background(), []string{"-target", target, "-points", table, "verify"}, &out, &errOut)
 	if code != 0 || !strings.Contains(out.String(), "期望 85.0 一致") || !strings.Contains(out.String(), "3 点：一致 2 · 不一致 0 · 读取失败 0 · 未核对 1") {
 		t.Fatalf("exit=%d %s %s", code, &out, &errOut)
+	}
+	if got := srv.Stats().Reads; got != 3 {
+		t.Fatalf("verify must read each point separately: %d requests", got)
 	}
 	write("属性标识,属性名称,模拟值\nDB1.R0,一次供温,86\nDB9.R0,不存在的 DB,1\nWHNB.PV_time,非 S7 标识,\n")
 	out.Reset()

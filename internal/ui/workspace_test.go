@@ -188,6 +188,9 @@ func TestDesktopImportsPointTableAndVerifies(t *testing.T) {
 	test.Tap(d.readBtn)
 	d.workers.Wait()
 	d.refresh(c.Snapshot())
+	if got := srv.Stats().Reads; got != 3 {
+		t.Fatalf("point table must read each address separately: got %d requests, want 3", got)
+	}
 	if len(d.rows) != 3 {
 		t.Fatalf("rows %q (%s)", d.rows, c.Snapshot().LastError)
 	}
@@ -203,6 +206,9 @@ func TestDesktopImportsPointTableAndVerifies(t *testing.T) {
 	}
 	if !strings.Contains(d.tableInfo.Text, "一致 1 · 不一致 1 · 读取失败 0 · 未核对 1") || d.tableInfo.Importance != widget.DangerImportance {
 		t.Fatalf("summary %q %v", d.tableInfo.Text, d.tableInfo.Importance)
+	}
+	if !strings.Contains(d.tableInfo.Text, "已逐点读取 3/3") {
+		t.Fatalf("missing point-by-point progress: %q", d.tableInfo.Text)
 	}
 	test.Tap(d.copyResultBtn)
 	if got := d.app.Clipboard().Content(); !strings.HasPrefix(got, "地址\t名称\t类型\t值\t核对") || !strings.Contains(got, "DB1.R0\t一次供温\tREAL\t85 ℃\t一致") {

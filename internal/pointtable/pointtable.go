@@ -237,11 +237,11 @@ func header(rows []row) (int, bool) {
 
 // Check 按期望值核对一次读数：两边按点位类型编码后逐字节比较，REAL 即按 32 位精度比较。
 func Check(r device.ReadResult, expected string) string {
-	if strings.TrimSpace(expected) == "" {
-		return ""
-	}
 	if r.Quality != "GOOD" {
 		return Failed
+	}
+	if strings.TrimSpace(expected) == "" {
+		return ""
 	}
 	want, e := device.ParseValue(r.Address, expected)
 	if e != nil {

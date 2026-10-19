@@ -13,6 +13,57 @@ func (c *Controller) Read(ctx context.Context, points []Point) error {
 	return c.read(ctx, points, 0)
 }
 
+// ReadEach validates an imported point table one address at a time.
+func (c *Controller) ReadEach(ctx context.Context, points []Point) error {
+	s, ctx, done, err := c.acquire(ctx, 0)
+	if err != nil {
+		return err
+	}
+	defer done()
+	aa, err := resolve(s.p, points)
+	if err != nil {
+		return err
+	}
+	c.mu.Lock()
+	if c.s == s && !c.closed {
+		c.stopPollLocked()
+		c.snap.Results = nil
+		c.snap.LastError = ""
+		c.snap.ReadingEach = true
+		c.snap.ReadCompleted = 0
+		c.snap.ReadTotal = len(aa)
+		c.snap.Revision++
+	}
+	c.mu.Unlock()
+	rr, err := device.ReadEach(ctx, s.d, aa, func(r device.ReadResult) {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if c.s == s && !c.closed {
+			c.snap.Results = append(c.snap.Results, r)
+			c.snap.ReadCompleted++
+			c.snap.Revision++
+		}
+	})
+	c.mu.Lock()
+	if c.s == s && !c.closed {
+		c.snap.Results = rr
+		c.snap.ReadingEach = false
+		if err != nil {
+			c.snap.LastError = err.Error()
+		}
+		state := "完成"
+		if err != nil {
+			state = "中断"
+		}
+		c.logLocked(fmt.Sprintf("逐点读取%s %d/%d", state, c.snap.ReadCompleted, c.snap.ReadTotal))
+	}
+	c.mu.Unlock()
+	if err != nil {
+		c.failure(s, err)
+	}
+	return err
+}
+
 func (c *Controller) read(ctx context.Context, points []Point, generation uint64) error {
 	s, ctx, done, e := c.acquire(ctx, generation)
 	if e != nil {
@@ -23,6 +74,17 @@ func (c *Controller) read(ctx context.Context, points []Point, generation uint64
 	if e != nil {
 		return e
 	}
+	c.mu.Lock()
+	if generation != 0 && !c.snap.Polling {
+		c.mu.Unlock()
+		return nil // A stopped poll may have been waiting behind point verification.
+	}
+	if c.s == s && !c.closed {
+		c.snap.ReadingEach = false
+		c.snap.ReadCompleted, c.snap.ReadTotal = 0, 0
+		c.snap.Revision++
+	}
+	c.mu.Unlock()
 	rr, e := s.d.Read(ctx, aa)
 	c.mu.Lock()
 	if c.s == s && !c.closed {
@@ -61,6 +123,12 @@ func (c *Controller) Write(ctx context.Context, req WriteRequest, approved bool)
 		return e
 	}
 	want, _ := device.EncodeValue(a, v)
+	c.mu.Lock()
+	if c.s == s && !c.closed {
+		c.snap.ReadCompleted, c.snap.ReadTotal = 0, 0
+		c.snap.Revision++
+	}
+	c.mu.Unlock()
 	result, e := s.d.Write(ctx, a, v)
 	readback := "无法确认"
 	var rr []device.ReadResult
