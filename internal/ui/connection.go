@@ -54,8 +54,8 @@ func (d *Desktop) connectionPanel() fyne.CanvasObject {
 	d.disconnectBtn = widget.NewButtonWithIcon("断开", theme.LogoutIcon(), func() { d.run(func(context.Context) error { return d.controller.Disconnect() }) })
 	d.demoBtn = widget.NewButtonWithIcon("启动本机演示", theme.MediaPlayIcon(), func() { d.run(d.controller.StartDemo) })
 	d.stopDemoBtn = widget.NewButtonWithIcon("停止演示", theme.MediaStopIcon(), func() { d.run(func(context.Context) error { return d.controller.StopDemo() }) })
-	actions := container.NewHBox(d.connectBtn, d.disconnectBtn, widget.NewSeparator(), d.demoBtn, d.stopDemoBtn)
-	line := container.NewBorder(nil, nil, container.NewHBox(widget.NewLabel("系列"), d.family), actions, d.target)
+	actions := container.NewHBox(d.connectBtn, d.disconnectBtn)
+	line := container.NewBorder(nil, nil, container.NewHBox(widget.NewLabel("PLC 系列"), d.family), actions, d.target)
 	d.rack = entry("-1", "自动 -1")
 	d.slot = entry("-1", "自动 -1")
 	d.localTSAP = entry("", "默认 0x0100")
@@ -76,13 +76,14 @@ func (d *Desktop) connectionPanel() fyne.CanvasObject {
 	d.connectionDetails = widget.NewLabel("")
 	d.connectionDetails.Wrapping = fyne.TextWrapWord
 	d.connectionDetails.Selectable = true
-	details := container.NewBorder(nil, nil, nil, d.diagnosticsBtn, d.connectionDetails)
-	return container.NewVBox(line, details, widget.NewAccordion(widget.NewAccordionItem("高级连接配置（系列档案未经实机认证）", form)))
+	diagnosticActions := container.NewHBox(d.diagnosticsBtn, d.demoBtn, d.stopDemoBtn)
+	details := container.NewBorder(nil, nil, nil, diagnosticActions, d.connectionDetails)
+	return container.NewVBox(line, details, widget.NewAccordion(widget.NewAccordionItem("高级连接配置", form)))
 }
 
 func (d *Desktop) refreshConnectionDetails(s service.Snapshot) {
 	if s.State != "connected" && s.Connection.Resources.ReadAt.IsZero() {
-		setText(d.connectionDetails, "连接后可查看路由机架、槽号和设备连接数。", widget.LowImportance)
+		setText(d.connectionDetails, "连接后可查看路由机架、槽号和设备连接数。", widget.MediumImportance)
 		return
 	}
 	info := s.Connection
@@ -90,10 +91,10 @@ func (d *Desktop) refreshConnectionDetails(s service.Snapshot) {
 	if info.RackSlotKnown {
 		route = fmt.Sprintf("路由机架 %d · 槽号 %d", info.Rack, info.Slot)
 	}
-	text := fmt.Sprintf("%s    TSAP 0x%04X → 0x%04X", route, info.LocalTSAP, info.RemoteTSAP)
+	text := fmt.Sprintf("%s · TSAP 0x%04X → 0x%04X", route, info.LocalTSAP, info.RemoteTSAP)
 	resources := info.Resources
 	if !resources.ReadAt.IsZero() {
-		text += "\n" + resources.ReadAt.Local().Format("15:04:05") + "  "
+		text += "\n"
 		if resources.CurrentError == "" {
 			current := resources.Current
 			text += fmt.Sprintf("当前连接 PG %d · OS %d · 组态已建立 %d / 已配置 %d · 空闲 %d · 共享资源已用 %d", current.PG, current.OS, current.Established, current.Configured, current.Free, current.SharedUsed)
@@ -101,10 +102,11 @@ func (d *Desktop) refreshConnectionDetails(s service.Snapshot) {
 			text += "当前连接不可用（详见日志）"
 		}
 		if resources.MaxError == "" {
-			text += fmt.Sprintf("    最大通信连接数 %d", resources.Maximum)
+			text += fmt.Sprintf("\n最大通信连接数 %d", resources.Maximum)
 		} else {
-			text += "    最大通信连接数不可用（详见日志）"
+			text += "\n最大通信连接数不可用（详见日志）"
 		}
+		text += " · " + resources.ReadAt.Local().Format("15:04:05")
 	}
 	setText(d.connectionDetails, text, widget.MediumImportance)
 }

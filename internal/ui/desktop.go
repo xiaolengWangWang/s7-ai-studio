@@ -34,7 +34,7 @@ type Desktop struct {
 	busy                                                                                                     int
 	revision, generation                                                                                     uint64
 	snapshot                                                                                                 service.Snapshot
-	heading, status, lastError, recordStatus, writeStatus, emptyHint, packetCount, logCount                  *widget.Label
+	heading, status, lastError, recordStatus, writeStatus, emptyHint, packetCount                            *widget.Label
 	activity                                                                                                 *widget.Activity
 	family                                                                                                   *widget.Select
 	target, rack, slot, localTSAP, remoteTSAP, timeout, vdb, voffset, addresses, count, interval, writeValue *widget.Entry
@@ -42,7 +42,10 @@ type Desktop struct {
 	connectBtn, disconnectBtn, demoBtn, stopDemoBtn, readBtn, pollBtn, stopPollBtn, writeBtn                 *widget.Button
 	diagnosticsBtn                                                                                           *widget.Button
 	connectionDetails                                                                                        *widget.Label
-	copyPacketBtn, copyLogBtn, openRecordBtn, importBtn, clearTableBtn, copyResultBtn                        *widget.Button
+	copyPacketBtn, openRecordBtn, importBtn, clearTableBtn, copyResultBtn                                    *widget.Button
+	connectionError                                                                                          *fyne.Container
+	tabs                                                                                                     *container.AppTabs
+	packetTab, logTab                                                                                        *container.TabItem
 	tableInfo                                                                                                *widget.Label
 	pointTable                                                                                               *pointtable.Table
 	meta                                                                                                     map[string]pointtable.Point
@@ -53,9 +56,10 @@ type Desktop struct {
 	packets                                                                                                  *widget.List
 	packetSelection                                                                                          int
 	packetFilter                                                                                             string
+	packetFilterSelect                                                                                       *widget.Select
 	shownPackets                                                                                             []device.Event
-	wire, logs                                                                                               *widget.Label
-	logScroll                                                                                                *container.Scroll
+	wire, wireHint                                                                                           *widget.Label
+	logs                                                                                                     *logView
 	updates                                                                                                  *updateView
 }
 
@@ -66,25 +70,34 @@ func NewDesktop(a fyne.App, c *service.Controller, version string) *Desktop {
 	d.win.SetIcon(icon.Application())
 	d.heading = widget.NewLabelWithStyle("S7 AI Studio  "+version+" · 正式版", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	d.status = widget.NewLabelWithStyle("未连接", fyne.TextAlignTrailing, fyne.TextStyle{Bold: true})
+	d.status.Truncation = fyne.TextTruncateEllipsis
 	d.activity = widget.NewActivity()
 	d.activity.Hide()
 	d.lastError = widget.NewLabel("")
 	d.lastError.Importance = widget.DangerImportance
 	d.lastError.Wrapping = fyne.TextWrapWord
+	d.lastError.Selectable = true
 	d.lastError.Hide()
+	viewLogs := widget.NewButtonWithIcon("查看日志", theme.DocumentIcon(), func() { d.tabs.Select(d.logTab) })
+	d.connectionError = container.NewBorder(nil, nil, nil, viewLogs, d.lastError)
+	d.connectionError.Hide()
 	d.recordStatus = widget.NewLabel("")
-	d.recordStatus.Wrapping = fyne.TextWrapBreak
+	d.recordStatus.Truncation = fyne.TextTruncateEllipsis
+	d.recordStatus.Selectable = true
 	d.openRecordBtn = widget.NewButtonWithIcon("打开记录目录", theme.FolderOpenIcon(), d.openRecords)
-	header := container.NewBorder(nil, nil, d.heading, container.NewHBox(d.activity, d.status))
-	top := container.NewVBox(header, d.connectionPanel(), d.lastError)
+	header := container.NewBorder(nil, nil, d.heading, d.activity, d.status)
+	top := container.NewVBox(header, widget.NewSeparator(), d.connectionPanel(), d.connectionError)
 	d.updates = newUpdateView(d, version)
-	tabs := container.NewAppTabs(
+	d.logs = newLogView(d)
+	d.packetTab = container.NewTabItemWithIcon("报文", theme.StorageIcon(), d.packetPanel())
+	d.logTab = container.NewTabItemWithIcon("日志", theme.DocumentIcon(), d.logs.panel())
+	d.tabs = container.NewAppTabs(
 		container.NewTabItemWithIcon("点位与读写", theme.ListIcon(), d.pointsPanel()),
-		container.NewTabItemWithIcon("报文", theme.StorageIcon(), d.packetPanel()),
-		container.NewTabItemWithIcon("日志", theme.DocumentIcon(), d.logPanel()),
+		d.packetTab,
+		d.logTab,
 		container.NewTabItemWithIcon("帮助", theme.HelpIcon(), helpPanel()),
 		container.NewTabItemWithIcon("更新", theme.ViewRefreshIcon(), d.updates.panel()))
-	body := container.NewVScroll(container.NewBorder(top, nil, nil, nil, tabs))
+	body := container.NewVScroll(container.NewBorder(top, nil, nil, nil, d.tabs))
 	footer := container.NewBorder(widget.NewSeparator(), nil, nil, d.openRecordBtn, d.recordStatus)
 	d.win.SetContent(container.NewPadded(container.NewBorder(nil, footer, nil, nil, body)))
 	w, h := platform.WorkArea()
@@ -110,12 +123,17 @@ func (d *Desktop) Show() {
 			defer d.refreshWorkers.Done()
 			tick := time.NewTicker(250 * time.Millisecond)
 			defer tick.Stop()
+			var lastRevision uint64
 			for {
 				select {
 				case <-d.ctx.Done():
 					return
 				case <-tick.C:
 					s := d.controller.Snapshot()
+					if s.Revision == lastRevision {
+						continue
+					}
+					lastRevision = s.Revision
 					fyne.Do(func() {
 						if d.ctx.Err() == nil {
 							d.refresh(s)
@@ -216,7 +234,6 @@ func (d *Desktop) updateControls() {
 	enable(d.clearTableBtn, idle && d.pointTable != nil)
 	enable(d.copyResultBtn, len(d.rows) > 0)
 	enable(d.copyPacketBtn, d.wire.Text != "")
-	enable(d.copyLogBtn, d.logs.Text != "")
 	d.updates.refresh()
 	visible(d.activity, !idle || s.State == "connecting")
 	if d.activity.Visible() {
@@ -270,6 +287,7 @@ func (d *Desktop) refresh(s service.Snapshot) {
 	setText(d.status, text, stateImportance[s.State])
 	setText(d.lastError, s.LastError, widget.DangerImportance)
 	visible(d.lastError, s.LastError != "")
+	visible(d.connectionError, s.LastError != "")
 	d.refreshConnectionDetails(s)
 	rows, verdicts := d.resultRows(s.Results)
 	d.rows = rows
@@ -278,7 +296,7 @@ func (d *Desktop) refresh(s service.Snapshot) {
 	setText(d.tableInfo, info, infoImportance)
 	visible(d.tableInfo, info != "")
 	visible(d.emptyHint, len(d.rows) == 0)
-	writeText, importance := "写入默认关闭。勾选“允许写入”后，仍须在确认框核对目标、地址、类型与值。", widget.LowImportance
+	writeText, importance := "写入默认关闭。勾选“允许写入”后，仍须在确认框核对目标、地址、类型与值。", widget.MediumImportance
 	if r := s.WriteResult; r != nil {
 		writeText, importance = "写入 "+r.State+" · 读回"+s.Readback, writeImportance(r.State, s.Readback)
 		if r.Error != "" {
@@ -293,15 +311,10 @@ func (d *Desktop) refresh(s service.Snapshot) {
 	}
 	setText(d.writeStatus, writeText, importance)
 	d.refreshPackets()
-	logs := joinLogs(s.Logs)
-	if logs != d.logs.Text {
-		d.logs.SetText(logs)
-		d.logScroll.ScrollToBottom()
-	}
-	setText(d.logCount, logSummary(len(s.Logs)), widget.LowImportance)
-	record, importance := "记录目录："+s.RecordDir+"  · 按天 / 50 MB 轮转  · 异步记录启用", widget.MediumImportance
+	d.logs.refresh(s.Logs)
+	record, importance := "记录正常 · 按天及 50 MB 轮转 · "+s.RecordDir, widget.MediumImportance
 	if s.RecordError != "" {
-		record, importance = "记录目录："+s.RecordDir+"\n记录失败："+s.RecordError, widget.DangerImportance
+		record, importance = "记录失败："+s.RecordError, widget.DangerImportance
 	}
 	setText(d.recordStatus, record, importance)
 	d.updateControls()

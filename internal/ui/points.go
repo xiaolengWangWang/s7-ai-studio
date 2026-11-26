@@ -189,7 +189,6 @@ func (d *Desktop) pointsPanel() fyne.CanvasObject {
 	fields := container.NewBorder(nil, nil, widget.NewLabel("地址"), container.NewHBox(widget.NewLabel("类型"), d.kind, widget.NewLabel("数量"), container.NewGridWrap(fyne.NewSize(75, 36), d.count)), d.addresses)
 	actions := container.NewBorder(nil, nil, container.NewHBox(d.readBtn, d.pollBtn, d.stopPollBtn, widget.NewLabel("间隔（ms）"), container.NewGridWrap(fyne.NewSize(90, 36), d.interval)), container.NewHBox(d.importBtn, d.clearTableBtn, d.copyResultBtn))
 	hint := widget.NewLabel("viSCADA 物模型导出（.xlsx）或 CSV：按“属性标识/地址”列读取，“模拟值/期望值”列用于核对。多个地址跨 PDU 读取时不是同一时刻的原子快照。")
-	hint.Importance = widget.LowImportance
 	hint.Truncation = fyne.TextTruncateEllipsis
 	d.table = widget.NewTable(func() (int, int) { return len(d.rows), len(resultHeads) }, func() fyne.CanvasObject {
 		l := widget.NewLabel("")
@@ -225,7 +224,6 @@ func (d *Desktop) pointsPanel() fyne.CanvasObject {
 		}
 	}
 	d.emptyHint = widget.NewLabelWithStyle("暂无读取结果。连接后点击“读取一次”或“开始轮询”；也可先启动本机演示，或导入点表。", fyne.TextAlignCenter, fyne.TextStyle{})
-	d.emptyHint.Importance = widget.LowImportance
 	d.allowWrite = widget.NewCheck("允许写入（操作前仍需确认）", func(bool) { d.updateControls() })
 	d.writeValue = entry("123", "一个值或逗号分隔数组")
 	d.writeBtn = widget.NewButtonWithIcon("确认写入…", theme.UploadIcon(), d.confirmWrite)
@@ -233,10 +231,10 @@ func (d *Desktop) pointsPanel() fyne.CanvasObject {
 	submit(d.writeValue, d.writeBtn)
 	d.writeStatus = widget.NewLabel("")
 	d.writeStatus.Wrapping = fyne.TextWrapBreak
-	writeLine := container.NewBorder(nil, nil, widget.NewLabel("写入值"), d.writeBtn, d.writeValue)
+	writeLine := container.NewBorder(nil, nil, container.NewHBox(d.allowWrite, widget.NewLabel("写入值")), d.writeBtn, d.writeValue)
 	status := container.NewVScroll(d.writeStatus)
 	status.SetMinSize(fyne.NewSize(0, 64))
-	bottom := container.NewVBox(widget.NewSeparator(), d.allowWrite, writeLine, status)
+	bottom := container.NewVBox(widget.NewSeparator(), writeLine, status)
 	return container.NewBorder(container.NewVBox(fields, actions, d.tableInfo, hint), bottom, nil, nil, container.NewStack(d.table, container.NewCenter(d.emptyHint)))
 }
 

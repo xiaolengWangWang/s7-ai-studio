@@ -30,34 +30,37 @@ type Snapshot struct {
 	Packets                                                                        []device.Event
 	ConnectionPackets                                                              []device.Event
 	Connection                                                                     ConnectionInfo
-	Logs                                                                           []string
+	Logs                                                                           []LogEntry
 	Dropped                                                                        int64
 }
 type session struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	d      device.Driver
-	gate   chan struct{}
-	wg     sync.WaitGroup
-	end    sync.Once
-	id     int64
-	cfg    Config
-	p      profile.Profile
+	ctx       context.Context
+	cancel    context.CancelFunc
+	d         device.Driver
+	gate      chan struct{}
+	wg        sync.WaitGroup
+	end       sync.Once
+	id        int64
+	cfg       Config
+	p         profile.Profile
+	readFault device.Event
 }
 type Controller struct {
-	mu         sync.Mutex
-	ops        sync.WaitGroup
-	closed     bool
-	once       sync.Once
-	closeErr   error
-	snap       Snapshot
-	s          *session
-	dial       func(context.Context, string, s7.Options) (device.Driver, error)
-	rec        *recorder.Recorder
-	pollCancel context.CancelFunc
-	pollSeq    uint64
-	demo       *simulator.Server
-	demoDone   chan struct{}
+	mu          sync.Mutex
+	ops         sync.WaitGroup
+	closed      bool
+	once        sync.Once
+	closeErr    error
+	snap        Snapshot
+	s           *session
+	dial        func(context.Context, string, s7.Options) (device.Driver, error)
+	rec         *recorder.Recorder
+	pollCancel  context.CancelFunc
+	pollSeq     uint64
+	demo        *simulator.Server
+	demoDone    chan struct{}
+	logID       uint64
+	pollFailure string
 }
 
 func New(o Options) *Controller {
@@ -80,16 +83,9 @@ func New(o Options) *Controller {
 		c.rec, e = recorder.OpenDaily(o.RecordDir)
 	}
 	if e != nil {
-		c.snap.RecordError = e.Error()
+		c.recordErrorLocked(e)
 	}
 	return c
-}
-func (c *Controller) logLocked(text string) {
-	c.snap.Logs = append(c.snap.Logs, time.Now().Format("15:04:05")+" "+text)
-	if len(c.snap.Logs) > 100 {
-		c.snap.Logs = c.snap.Logs[len(c.snap.Logs)-100:]
-	}
-	c.snap.Revision++
 }
 func (c *Controller) begin() error {
 	c.mu.Lock()
@@ -103,16 +99,17 @@ func (c *Controller) begin() error {
 func (c *Controller) healthLocked() {
 	if c.rec != nil {
 		d, e := c.rec.Health()
-		msg := c.snap.RecordError
-		if e != nil {
-			msg = e.Error()
-		}
-		if d > 0 && e == nil {
-			msg = fmt.Sprintf("记录丢弃 %d 条报文", d)
-		}
-		if d != c.snap.Dropped || msg != c.snap.RecordError {
+		c.recordErrorLocked(e)
+		if d != c.snap.Dropped {
+			firstDrop := c.snap.Dropped == 0 && d > 0
 			c.snap.Dropped = d
-			c.snap.RecordError = msg
+			if d > 0 && e == nil {
+				msg := fmt.Sprintf("记录丢弃 %d 条报文", d)
+				c.snap.RecordError = msg
+				if firstDrop {
+					c.logLocked(LogWarning, LogSystem, msg, "", device.Event{})
+				}
+			}
 			c.snap.Revision++
 		}
 	}
@@ -122,7 +119,7 @@ func (c *Controller) Snapshot() Snapshot {
 	defer c.mu.Unlock()
 	c.healthLocked()
 	s := c.snap
-	s.Logs = append([]string(nil), s.Logs...)
+	s.Logs = append([]LogEntry(nil), s.Logs...)
 	s.Packets = clonePackets(c.snap.Packets)
 	s.ConnectionPackets = clonePackets(c.snap.ConnectionPackets)
 	s.Results = make([]device.ReadResult, len(c.snap.Results))
@@ -152,8 +149,7 @@ func (c *Controller) recordError(e error) {
 		return
 	}
 	c.mu.Lock()
-	c.snap.RecordError = e.Error()
-	c.snap.Revision++
+	c.recordErrorLocked(e)
 	c.mu.Unlock()
 }
 func (c *Controller) end(s *session) {
@@ -168,6 +164,7 @@ func (c *Controller) end(s *session) {
 }
 func (c *Controller) stopPollLocked() {
 	if c.pollCancel != nil {
+		c.logLocked(LogInfo, LogPolling, "轮询已停止", "POLL_STOP", device.Event{})
 		c.pollCancel()
 		c.pollCancel = nil
 	}
@@ -177,8 +174,8 @@ func (c *Controller) stopPollLocked() {
 }
 func (c *Controller) detachLocked(state string) *session {
 	s := c.s
-	c.s = nil
 	c.stopPollLocked()
+	c.s = nil
 	c.snap.Generation++
 	c.snap.State = state
 	c.snap.Connection = ConnectionInfo{}
@@ -205,8 +202,8 @@ func (c *Controller) Disconnect() error {
 	}
 	defer c.ops.Done()
 	c.mu.Lock()
+	c.logLocked(LogInfo, LogConnection, "已断开连接", "SESSION_END", device.Event{})
 	s := c.detachLocked("disconnected")
-	c.logLocked("已断开连接")
 	c.mu.Unlock()
 	c.finishSession(s)
 	return nil
@@ -233,9 +230,7 @@ func (c *Controller) Connect(ctx context.Context, cfg Config) error {
 	defer s.wg.Done()
 	if c.rec != nil {
 		s.id, e = c.rec.StartSession(device.ProtocolS7TCP, cfg.Target, 1)
-		if e != nil {
-			c.snap.RecordError = e.Error()
-		}
+		c.recordErrorLocked(e)
 	}
 	c.s = s
 	c.snap.Target = cfg.Target
@@ -246,7 +241,7 @@ func (c *Controller) Connect(ctx context.Context, cfg Config) error {
 	c.snap.WriteResult = nil
 	c.snap.Readback = ""
 	connection := connectionInfo(cfg, p, o)
-	c.logLocked(fmt.Sprintf("正在连接 %s · %s · %s", cfg.Target, p.Family, connection.endpoint()))
+	c.logLocked(LogInfo, LogConnection, fmt.Sprintf("正在连接 %s · %s · %s", cfg.Target, p.Family, connection.endpoint()), "", device.Event{})
 	c.mu.Unlock()
 	c.finishSession(old)
 	o.Observer = device.ObserverFunc(func(event device.Event) {
@@ -274,7 +269,27 @@ func (c *Controller) Connect(ctx context.Context, cfg Config) error {
 						status += " " + event.Error
 					}
 				}
-				c.logLocked(fmt.Sprintf("%s %s · 请求 #%d · RX %d 字节 · %s", stage, status, event.RequestID, len(event.Raw), event.RTT.Round(time.Microsecond)))
+				level := LogInfo
+				if event.Status != device.StatusSuccess {
+					level = LogWarning
+				}
+				c.logLocked(level, LogConnection, fmt.Sprintf("%s %s · 请求 #%d · RX %d 字节 · %s", stage, status, event.RequestID, len(event.Raw), event.RTT.Round(time.Microsecond)), "", event)
+			} else if event.Status != device.StatusSuccess && event.Status != device.StatusCancelled {
+				category := LogDiagnostic
+				switch event.Operation {
+				case "READ":
+					s.readFault = packet
+					category = LogRead
+				case "WRITE":
+					category = LogWrite
+				}
+				if category != LogRead || !c.snap.Polling {
+					msg := fmt.Sprintf("%s 响应异常 · %s", event.Operation, event.Status)
+					if event.Error != "" {
+						msg += " · " + event.Error
+					}
+					c.logLocked(LogWarning, category, msg, "", event)
+				}
 			}
 		}
 		c.snap.Revision++
@@ -291,7 +306,7 @@ func (c *Controller) Connect(ctx context.Context, cfg Config) error {
 	if e != nil {
 		c.snap.State = "error"
 		c.snap.LastError = e.Error()
-		c.logLocked("连接失败: " + e.Error())
+		c.logLocked(LogError, LogConnection, "连接失败: "+e.Error(), recorder.EventConnectFail, device.Event{})
 		s.cancel()
 		c.mu.Unlock()
 		c.end(s)
@@ -301,7 +316,7 @@ func (c *Controller) Connect(ctx context.Context, cfg Config) error {
 	c.snap.State = "connected"
 	connection.PDULength = d.Capabilities().PDULength
 	c.snap.Connection = connection
-	c.logLocked(fmt.Sprintf("已连接 %s · 协商 PDU %d 字节", cfg.Target, connection.PDULength))
+	c.logLocked(LogInfo, LogConnection, fmt.Sprintf("已连接 %s · 协商 PDU %d 字节", cfg.Target, connection.PDULength), recorder.EventConnect, device.Event{})
 	c.mu.Unlock()
 	return nil
 }
@@ -350,7 +365,7 @@ func (c *Controller) failure(s *session, e error) {
 		c.snap.State = "error"
 		c.snap.LastError = e.Error()
 		c.stopPollLocked()
-		c.logLocked("通讯失败，需重新连接: " + e.Error())
+		c.logLocked(LogError, LogConnection, "通讯失败，需重新连接: "+e.Error(), recorder.EventDisconnect, device.Event{})
 		s.cancel()
 	}
 	c.mu.Unlock()

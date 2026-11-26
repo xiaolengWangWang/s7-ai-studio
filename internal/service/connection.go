@@ -104,13 +104,13 @@ func (c *Controller) RefreshConnectionStats(ctx context.Context) error {
 	c.snap.Connection.Resources = resources
 	switch {
 	case resources.CurrentError == "" && resources.MaxError == "":
-		c.logLocked("已读取设备当前连接和最大通信连接数")
+		c.logLocked(LogInfo, LogDiagnostic, "已读取设备当前连接和最大通信连接数", "", device.Event{})
 	case resources.CurrentError == "":
-		c.logLocked("已读取设备当前连接，最大通信连接数不可用：" + resources.MaxError)
+		c.logLocked(LogWarning, LogDiagnostic, "已读取设备当前连接，最大通信连接数不可用："+resources.MaxError, "", device.Event{})
 	case resources.MaxError == "":
-		c.logLocked("已读取设备最大通信连接数，当前连接不可用：" + resources.CurrentError)
+		c.logLocked(LogWarning, LogDiagnostic, "已读取设备最大通信连接数，当前连接不可用："+resources.CurrentError, "", device.Event{})
 	default:
-		c.logLocked(fmt.Sprintf("设备连接数不可用 · 当前连接：%s · 最大连接数：%s", resources.CurrentError, resources.MaxError))
+		c.logLocked(LogWarning, LogDiagnostic, fmt.Sprintf("设备连接数不可用 · 当前连接：%s · 最大连接数：%s", resources.CurrentError, resources.MaxError), "", device.Event{})
 	}
 	c.mu.Unlock()
 	if driver, ok := s.d.(interface{ IsClosed() bool }); ok && driver.IsClosed() {

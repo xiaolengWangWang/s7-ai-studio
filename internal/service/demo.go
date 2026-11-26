@@ -43,7 +43,7 @@ func (c *Controller) StartDemo(ctx context.Context) error {
 	c.demo = srv
 	c.demoDone = done
 	c.snap.DemoTarget = l.Addr().String()
-	c.logLocked("本机演示：合成协议对端 " + c.snap.DemoTarget)
+	c.logLocked(LogInfo, LogSystem, "本机演示：合成协议对端 "+c.snap.DemoTarget, "", device.Event{})
 	c.mu.Unlock()
 	go func() { defer close(done); srv.Serve(context.Background(), l) }()
 	cfg := DefaultConfig()
@@ -67,7 +67,7 @@ func (c *Controller) StopDemo() error {
 	}
 	c.demo = nil
 	c.snap.DemoTarget = ""
-	c.logLocked("本机演示已停止")
+	c.logLocked(LogInfo, LogSystem, "本机演示已停止", "", device.Event{})
 	c.mu.Unlock()
 	c.finishSession(s)
 	if srv != nil {

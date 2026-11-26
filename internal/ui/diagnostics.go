@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"s7-ai-studio/internal/device"
+	"s7-ai-studio/internal/service"
+	"slices"
 	"strings"
 )
 
@@ -16,6 +19,7 @@ func (d *Desktop) packetPanel() fyne.CanvasObject {
 	d.wire = widget.NewLabel("")
 	d.wire.TextStyle = fyne.TextStyle{Monospace: true}
 	d.wire.Selectable = true
+	d.wireHint = widget.NewLabel("选择报文，查看解析和原始字节。")
 	d.packets = widget.NewList(func() int { return len(d.shownPackets) }, func() fyne.CanvasObject {
 		label := widget.NewLabel("15:00:00.000 RX #65535 读取 SUCCESS")
 		label.Truncation = fyne.TextTruncateEllipsis
@@ -32,7 +36,7 @@ func (d *Desktop) packetPanel() fyne.CanvasObject {
 		}
 		row[1].(*widget.Icon).SetResource(dir)
 		importance := widget.MediumImportance
-		if e.Error != "" || (e.Status != device.StatusSuccess && e.Status != device.StatusSent) {
+		if packetFailed(e) {
 			importance = widget.DangerImportance
 		}
 		sequence := fmt.Sprintf("#%d", e.RequestID)
@@ -48,30 +52,56 @@ func (d *Desktop) packetPanel() fyne.CanvasObject {
 		}
 		d.packetSelection = id
 		d.wire.SetText(packetText(packets[id]))
+		d.wireHint.Hide()
 		d.updateControls()
 	}
 	d.packets.OnUnselected = func(widget.ListItemID) {
 		d.packetSelection = -1
 		d.wire.SetText("")
+		d.wireHint.Show()
 		d.updateControls()
 	}
 	d.copyPacketBtn = widget.NewButtonWithIcon("复制详情", theme.ContentCopyIcon(), func() { d.app.Clipboard().SetContent(d.wire.Text) })
 	d.packetCount = widget.NewLabel("")
-	d.packetCount.Importance = widget.LowImportance
-	filter := widget.NewSelect([]string{"全部", "连接", "读取"}, func(value string) {
+	d.packetFilterSelect = widget.NewSelect([]string{"全部", "连接", "读取", "异常"}, func(value string) {
 		d.packets.UnselectAll()
 		d.packetSelection = -1
 		d.wire.SetText("")
+		d.wireHint.Show()
 		d.packetFilter = value
 		d.refreshPackets()
 	})
-	filter.SetSelected("全部")
-	hint := widget.NewLabel("全部/读取取自最近 256 条报文。连接保留跨会话的最近 64 条。")
-	hint.Importance = widget.LowImportance
+	d.packetFilterSelect.SetSelected("全部")
+	hint := widget.NewLabel("最近 256 条报文 · 连接筛选保留最近 64 条")
 	hint.Truncation = fyne.TextTruncateEllipsis
-	split := container.NewHSplit(d.packets, container.NewScroll(d.wire))
+	split := container.NewHSplit(d.packets, container.NewStack(container.NewScroll(d.wire), container.NewCenter(d.wireHint)))
 	split.Offset = .42
-	return container.NewBorder(container.NewBorder(nil, nil, hint, container.NewHBox(filter, d.packetCount, d.copyPacketBtn)), nil, nil, nil, split)
+	return container.NewBorder(container.NewBorder(nil, nil, hint, container.NewHBox(d.packetFilterSelect, d.packetCount, d.copyPacketBtn)), nil, nil, nil, split)
+}
+
+func (d *Desktop) showLogPacket(entry service.LogEntry) {
+	if entry.ConnectionID == "" || entry.RequestID == 0 {
+		return
+	}
+	for _, source := range []struct {
+		filter  string
+		packets []device.Event
+	}{{"全部", d.snapshot.Packets}, {"连接", d.snapshot.ConnectionPackets}} {
+		index := slices.IndexFunc(source.packets, func(packet device.Event) bool {
+			return packet.ConnectionID == entry.ConnectionID && packet.RequestID == entry.RequestID && packet.Dir == device.DirRX
+		})
+		if index >= 0 {
+			d.packetFilterSelect.SetSelected(source.filter)
+			d.tabs.Select(d.packetTab)
+			d.packets.Select(index)
+			return
+		}
+	}
+	dialog.ShowInformation("报文已离开实时列表", "可在记录目录中按目标与时间查找这次会话。", d.win)
+}
+
+func packetFailed(e device.Event) bool {
+	return e.Error != "" || (e.Status != "" && e.Status != device.StatusSuccess && e.Status != device.StatusSent)
 }
 
 func packetOperation(operation string) string {
@@ -104,13 +134,13 @@ func packetSummary(packets []device.Event) string {
 
 // filteredPackets retains the snapshot order, so a selected row always refers to the visible event.
 func filteredPackets(packets []device.Event, filter string) []device.Event {
-	if filter != "连接" && filter != "读取" {
+	if filter != "连接" && filter != "读取" && filter != "异常" {
 		return packets
 	}
 	result := make([]device.Event, 0, len(packets))
 	for _, e := range packets {
 		connection := e.Operation == "CONNECT" || e.Operation == "SETUP" || e.Operation == "CONNECTION_STATUS"
-		if (filter == "连接" && connection) || (filter == "读取" && e.Operation == "READ") {
+		if (filter == "连接" && connection) || (filter == "读取" && e.Operation == "READ") || (filter == "异常" && packetFailed(e)) {
 			result = append(result, e)
 		}
 	}
@@ -150,7 +180,7 @@ func (d *Desktop) refreshPackets() {
 		d.packets.UnselectAll()
 	}
 	d.packets.Refresh()
-	setText(d.packetCount, fmt.Sprintf("%s · 显示 %d 条", packetSummary(packets), len(packets)), widget.LowImportance)
+	setText(d.packetCount, fmt.Sprintf("%s · 显示 %d 条", packetSummary(packets), len(packets)), widget.MediumImportance)
 }
 
 func packetText(e device.Event) string {
@@ -238,16 +268,4 @@ func packetText(e device.Event) string {
 	}
 	fmt.Fprintf(&out, "\n真实报文字节（%d bytes）\n%s", len(raw), hex.Dump(raw))
 	return out.String()
-}
-func joinLogs(logs []string) string { return strings.Join(logs, "\n") }
-func logSummary(n int) string       { return fmt.Sprintf("最近 %d 条（最多 100 条）", n) }
-func (d *Desktop) logPanel() fyne.CanvasObject {
-	d.logs = widget.NewLabel("")
-	d.logs.Wrapping = fyne.TextWrapBreak
-	d.logs.Selectable = true
-	d.logScroll = container.NewVScroll(d.logs)
-	d.copyLogBtn = widget.NewButtonWithIcon("复制日志", theme.ContentCopyIcon(), func() { d.app.Clipboard().SetContent(d.logs.Text) })
-	d.logCount = widget.NewLabel("")
-	d.logCount.Importance = widget.LowImportance
-	return container.NewBorder(container.NewBorder(nil, nil, d.logCount, d.copyLogBtn), nil, nil, nil, d.logScroll)
 }
