@@ -138,7 +138,17 @@ func TestDesktopInstallsVerifiedUpdateAfterConfirmation(t *testing.T) {
 			t.Fatalf("unexpected restart target %q, downloads %d", target, downloads.Load())
 		}
 	case <-time.After(10 * time.Second):
-		t.Fatalf("update did not restart: %s", u.status.Text)
+		t.Fatal("update did not restart")
+	}
+	// The mock reports its invocation before finishRestart has dispatched its
+	// final UI callback. Wait for that callback before the next Fyne test starts.
+	select {
+	case <-u.restartDone:
+	case <-time.After(10 * time.Second):
+		t.Fatal("restart completion callback did not finish")
+	}
+	if !strings.Contains(u.status.Text, "restart intercepted by test") {
+		t.Fatalf("restart failure hidden: %s", u.status.Text)
 	}
 }
 

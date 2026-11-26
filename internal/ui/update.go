@@ -25,6 +25,7 @@ type updateView struct {
 	checkBtn, installBtn *widget.Button
 	cancelBtn            *widget.Button
 	confirmation         *dialog.ConfirmDialog
+	restartDone          chan struct{}
 	release              update.Release
 	cancel               context.CancelFunc
 	pending, restarting  bool
@@ -102,7 +103,8 @@ func (u *updateView) operation(message string, fn func(context.Context) (string,
 			} else if target != "" {
 				u.restarting = true
 				u.status.SetText("更新已安装，正在保存记录并重启…")
-				go u.finishRestart(target)
+				u.restartDone = make(chan struct{})
+				go u.finishRestart(target, u.restartDone)
 			}
 			u.refresh()
 		})
@@ -195,12 +197,13 @@ func (u *updateView) confirmInstall() {
 	u.confirmation.Show()
 }
 
-func (u *updateView) finishRestart(target string) {
+func (u *updateView) finishRestart(target string, done chan struct{}) {
 	err := u.d.Shutdown()
 	if err == nil {
 		err = u.restart(target)
 	}
 	fyne.Do(func() {
+		defer close(done)
 		if err != nil {
 			u.status.SetText("更新已安装，请手动重新启动软件：" + err.Error())
 			return
