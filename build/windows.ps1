@@ -1,7 +1,11 @@
-﻿param([string]$Version='0.6.0',[string]$CompilerRoot='D:\tools\winlibs-gcc16\mingw64')
+﻿param([string]$Version,[string]$CompilerRoot='D:\tools\winlibs-gcc16\mingw64')
 $ErrorActionPreference='Stop'
-if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must be a numeric major.minor.patch' }
 $repoRoot=Split-Path -Parent $PSScriptRoot
+if (-not $Version) {
+ $versionSource=Get-Content -LiteralPath (Join-Path $repoRoot 'cmd/s7-ai/main.go') -Encoding UTF8 -Raw
+ $Version=[regex]::Match($versionSource, '(?m)^var version = "(\d+\.\d+\.\d+)"').Groups[1].Value
+}
+if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must be a numeric major.minor.patch' }
 $guiRoot=Join-Path $repoRoot 'dist\windows-gui'
 $stage=Join-Path $guiRoot "S7AIStudio-$Version-Windows-x64"
 $zip="$stage.zip"

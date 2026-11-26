@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"s7-ai-studio/assets/icon"
+	"s7-ai-studio/internal/device"
 	"s7-ai-studio/internal/pointtable"
 	"s7-ai-studio/internal/service"
 	"s7-ai-studio/platform"
@@ -39,6 +40,8 @@ type Desktop struct {
 	target, rack, slot, localTSAP, remoteTSAP, timeout, vdb, voffset, addresses, count, interval, writeValue *widget.Entry
 	kind                                                                                                     *widget.Select
 	connectBtn, disconnectBtn, demoBtn, stopDemoBtn, readBtn, pollBtn, stopPollBtn, writeBtn                 *widget.Button
+	diagnosticsBtn                                                                                           *widget.Button
+	connectionDetails                                                                                        *widget.Label
 	copyPacketBtn, copyLogBtn, openRecordBtn, importBtn, clearTableBtn, copyResultBtn                        *widget.Button
 	tableInfo                                                                                                *widget.Label
 	pointTable                                                                                               *pointtable.Table
@@ -49,6 +52,8 @@ type Desktop struct {
 	rows                                                                                                     [][]string
 	packets                                                                                                  *widget.List
 	packetSelection                                                                                          int
+	packetFilter                                                                                             string
+	shownPackets                                                                                             []device.Event
 	wire, logs                                                                                               *widget.Label
 	logScroll                                                                                                *container.Scroll
 	updates                                                                                                  *updateView
@@ -198,6 +203,7 @@ func (d *Desktop) updateControls() {
 	idle := d.busy == 0 && !d.updates.restarting
 	enable(d.connectBtn, idle)
 	enable(d.disconnectBtn, s.State == "connecting" || ready || s.State == "error")
+	enable(d.diagnosticsBtn, ready && idle)
 	visible(d.demoBtn, s.DemoTarget == "")
 	enable(d.demoBtn, idle && s.DemoTarget == "")
 	visible(d.stopDemoBtn, s.DemoTarget != "")
@@ -264,6 +270,7 @@ func (d *Desktop) refresh(s service.Snapshot) {
 	setText(d.status, text, stateImportance[s.State])
 	setText(d.lastError, s.LastError, widget.DangerImportance)
 	visible(d.lastError, s.LastError != "")
+	d.refreshConnectionDetails(s)
 	rows, verdicts := d.resultRows(s.Results)
 	d.rows = rows
 	d.table.Refresh()
@@ -285,13 +292,7 @@ func (d *Desktop) refresh(s service.Snapshot) {
 		}
 	}
 	setText(d.writeStatus, writeText, importance)
-	d.packets.Refresh()
-	setText(d.packetCount, packetSummary(s.Packets), widget.LowImportance)
-	if d.packetSelection >= 0 && d.packetSelection < len(s.Packets) {
-		setText(d.wire, packetText(s.Packets[d.packetSelection]), widget.MediumImportance)
-	} else if d.packetSelection >= 0 {
-		d.packets.UnselectAll()
-	}
+	d.refreshPackets()
 	logs := joinLogs(s.Logs)
 	if logs != d.logs.Text {
 		d.logs.SetText(logs)

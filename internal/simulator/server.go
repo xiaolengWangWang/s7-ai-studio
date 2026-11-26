@@ -14,9 +14,10 @@ import (
 )
 
 type Options struct {
-	PDULimit int
-	Memory   *Memory
-	Fault    Fault
+	PDULimit       int
+	MaxConnections uint16
+	Memory         *Memory
+	Fault          Fault
 }
 type Stats struct{ Reads, Writes uint64 }
 type Server struct {
@@ -106,7 +107,7 @@ func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 			return nil
 		default:
 		}
-		s.connections[c] = true
+		s.connections[c] = false
 		s.wg.Add(1)
 		s.mu.Unlock()
 		go func() {
@@ -137,7 +138,7 @@ func (s *Server) handle(c net.Conn) {
 			return
 		}
 		job := frame[3:]
-		if len(job) < 10 || job[0] != 0x32 || job[1] != 1 || job[2] != 0 || job[3] != 0 {
+		if len(job) < 10 || job[0] != 0x32 || (job[1] != 1 && job[1] != 7) || job[2] != 0 || job[3] != 0 {
 			return
 		}
 		ref := binary.BigEndian.Uint16(job[4:6])
@@ -147,6 +148,12 @@ func (s *Server) handle(c net.Conn) {
 		}
 		params, data := job[10:10+pl], job[10+pl:]
 		var rp, rd []byte
+		if job[1] == 7 {
+			if negotiated == 0 || len(job) > negotiated || !s.handleConnectionSZL(c, ref, params, data, negotiated) {
+				return
+			}
+			continue
+		}
 		if params[0] == 0xf0 {
 			if negotiated != 0 || pl != 8 || dl != 0 {
 				return
@@ -155,6 +162,13 @@ func (s *Server) handle(c net.Conn) {
 			if requested < 64 {
 				return
 			}
+			s.mu.Lock()
+			if s.opts.MaxConnections > 0 && s.establishedConnectionsLocked() >= int(s.opts.MaxConnections) {
+				s.mu.Unlock()
+				return
+			}
+			s.connections[c] = true
+			s.mu.Unlock()
 			negotiated = min(requested, s.opts.PDULimit)
 			rp = []byte{0xf0, 0, 0, 1, 0, 1, byte(negotiated >> 8), byte(negotiated)}
 		} else {

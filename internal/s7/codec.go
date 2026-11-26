@@ -22,7 +22,7 @@ func parsePDU(b []byte, reference uint16) (pdu, error) {
 	head := 10
 	if p.kind == 3 {
 		head = 12
-	} else if p.kind != 1 {
+	} else if p.kind != 1 && p.kind != 7 {
 		return p, fmt.Errorf("unsupported S7 message type %02x", p.kind)
 	}
 	if len(b) < head {

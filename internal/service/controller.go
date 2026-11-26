@@ -28,6 +28,8 @@ type Snapshot struct {
 	Results                                                                        []device.ReadResult
 	WriteResult                                                                    *device.WriteResult
 	Packets                                                                        []device.Event
+	ConnectionPackets                                                              []device.Event
+	Connection                                                                     ConnectionInfo
 	Logs                                                                           []string
 	Dropped                                                                        int64
 }
@@ -121,10 +123,8 @@ func (c *Controller) Snapshot() Snapshot {
 	c.healthLocked()
 	s := c.snap
 	s.Logs = append([]string(nil), s.Logs...)
-	s.Packets = make([]device.Event, len(c.snap.Packets))
-	for i, e := range c.snap.Packets {
-		s.Packets[i] = e.Clone()
-	}
+	s.Packets = clonePackets(c.snap.Packets)
+	s.ConnectionPackets = clonePackets(c.snap.ConnectionPackets)
 	s.Results = make([]device.ReadResult, len(c.snap.Results))
 	for i, r := range c.snap.Results {
 		e := device.Event{Results: []device.EventResult{{Read: &r}}}
@@ -136,6 +136,16 @@ func (c *Controller) Snapshot() Snapshot {
 		s.WriteResult = &r
 	}
 	return s
+}
+func clonePackets(packets []device.Event) []device.Event {
+	if packets == nil {
+		return nil
+	}
+	out := make([]device.Event, len(packets))
+	for i, packet := range packets {
+		out[i] = packet.Clone()
+	}
+	return out
 }
 func (c *Controller) recordError(e error) {
 	if e == nil {
@@ -171,6 +181,7 @@ func (c *Controller) detachLocked(state string) *session {
 	c.stopPollLocked()
 	c.snap.Generation++
 	c.snap.State = state
+	c.snap.Connection = ConnectionInfo{}
 	c.snap.ReadingEach = false
 	c.snap.Revision++
 	if s != nil {
@@ -234,7 +245,8 @@ func (c *Controller) Connect(ctx context.Context, cfg Config) error {
 	c.snap.ReadCompleted, c.snap.ReadTotal = 0, 0
 	c.snap.WriteResult = nil
 	c.snap.Readback = ""
-	c.logLocked("正在连接 " + cfg.Target)
+	connection := connectionInfo(cfg, p, o)
+	c.logLocked(fmt.Sprintf("正在连接 %s · %s · %s", cfg.Target, p.Family, connection.endpoint()))
 	c.mu.Unlock()
 	c.finishSession(old)
 	o.Observer = device.ObserverFunc(func(event device.Event) {
@@ -247,9 +259,23 @@ func (c *Controller) Connect(ctx context.Context, cfg Config) error {
 		if c.s != s {
 			return
 		}
-		c.snap.Packets = append(c.snap.Packets, event.Clone())
-		if len(c.snap.Packets) > 256 {
-			c.snap.Packets = c.snap.Packets[len(c.snap.Packets)-256:]
+		packet := event.Clone()
+		c.snap.Packets = appendRecentPacket(c.snap.Packets, packet, 256)
+		switch event.Operation {
+		case "CONNECT", "SETUP", "CONNECTION_STATUS":
+			c.snap.ConnectionPackets = appendRecentPacket(c.snap.ConnectionPackets, packet, 64)
+		}
+		if event.Dir == device.DirRX {
+			if stage := handshakeStage(event.Operation); stage != "" {
+				status := "成功"
+				if event.Status != device.StatusSuccess {
+					status = fmt.Sprintf("失败（%s）", event.Status)
+					if event.Error != "" {
+						status += " " + event.Error
+					}
+				}
+				c.logLocked(fmt.Sprintf("%s %s · 请求 #%d · RX %d 字节 · %s", stage, status, event.RequestID, len(event.Raw), event.RTT.Round(time.Microsecond)))
+			}
 		}
 		c.snap.Revision++
 	})
@@ -273,7 +299,9 @@ func (c *Controller) Connect(ctx context.Context, cfg Config) error {
 	}
 	s.d = d
 	c.snap.State = "connected"
-	c.logLocked("已连接；系列档案不代表实机认证")
+	connection.PDULength = d.Capabilities().PDULength
+	c.snap.Connection = connection
+	c.logLocked(fmt.Sprintf("已连接 %s · 协商 PDU %d 字节", cfg.Target, connection.PDULength))
 	c.mu.Unlock()
 	return nil
 }

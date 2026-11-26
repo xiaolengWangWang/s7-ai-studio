@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -63,7 +64,49 @@ func (d *Desktop) connectionPanel() fyne.CanvasObject {
 	d.vdb = entry("0", "0 = 未映射")
 	d.voffset = entry("0", "字节偏移")
 	form := widget.NewForm(widget.NewFormItem("Rack / Slot", container.NewGridWithColumns(2, d.rack, d.slot)), widget.NewFormItem("Local / Remote TSAP", container.NewGridWithColumns(2, d.localTSAP, d.remoteTSAP)), widget.NewFormItem("超时（ms）", d.timeout), widget.NewFormItem("V 映射 DB / 偏移", container.NewGridWithColumns(2, d.vdb, d.voffset)))
-	return container.NewVBox(line, widget.NewAccordion(widget.NewAccordionItem("高级连接配置（系列档案未经实机认证）", form)))
+	d.diagnosticsBtn = widget.NewButtonWithIcon("查询设备连接数", theme.ViewRefreshIcon(), func() {
+		d.run(func(ctx context.Context) error {
+			err := d.controller.RefreshConnectionStats(ctx)
+			if errors.Is(err, context.Canceled) {
+				return nil
+			}
+			return err
+		})
+	})
+	d.connectionDetails = widget.NewLabel("")
+	d.connectionDetails.Wrapping = fyne.TextWrapWord
+	d.connectionDetails.Selectable = true
+	details := container.NewBorder(nil, nil, nil, d.diagnosticsBtn, d.connectionDetails)
+	return container.NewVBox(line, details, widget.NewAccordion(widget.NewAccordionItem("高级连接配置（系列档案未经实机认证）", form)))
+}
+
+func (d *Desktop) refreshConnectionDetails(s service.Snapshot) {
+	if s.State != "connected" && s.Connection.Resources.ReadAt.IsZero() {
+		setText(d.connectionDetails, "连接后可查看路由机架、槽号和设备连接数。", widget.LowImportance)
+		return
+	}
+	info := s.Connection
+	route := "机架 / 槽号无法从当前 TSAP 确定"
+	if info.RackSlotKnown {
+		route = fmt.Sprintf("路由机架 %d · 槽号 %d", info.Rack, info.Slot)
+	}
+	text := fmt.Sprintf("%s    TSAP 0x%04X → 0x%04X", route, info.LocalTSAP, info.RemoteTSAP)
+	resources := info.Resources
+	if !resources.ReadAt.IsZero() {
+		text += "\n" + resources.ReadAt.Local().Format("15:04:05") + "  "
+		if resources.CurrentError == "" {
+			current := resources.Current
+			text += fmt.Sprintf("当前连接 PG %d · OS %d · 组态已建立 %d / 已配置 %d · 空闲 %d · 共享资源已用 %d", current.PG, current.OS, current.Established, current.Configured, current.Free, current.SharedUsed)
+		} else {
+			text += "当前连接不可用（详见日志）"
+		}
+		if resources.MaxError == "" {
+			text += fmt.Sprintf("    最大通信连接数 %d", resources.Maximum)
+		} else {
+			text += "    最大通信连接数不可用（详见日志）"
+		}
+	}
+	setText(d.connectionDetails, text, widget.MediumImportance)
 }
 
 // inputs 是启动时恢复的连接与点位输入。写入值和“允许写入”不保存。

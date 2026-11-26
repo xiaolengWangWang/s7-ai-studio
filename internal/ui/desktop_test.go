@@ -64,6 +64,47 @@ func TestDesktopDemoAndWriteConfirmation(t *testing.T) {
 		t.Fatalf("write status %q rows %v", d.writeStatus.Text, d.rows)
 	}
 }
+func TestDesktopQueriesDemoConnectionResources(t *testing.T) {
+	d, c := desktop(t, "")
+	if !d.diagnosticsBtn.Disabled() {
+		t.Fatal("connection query enabled before connect")
+	}
+	test.Tap(d.demoBtn)
+	d.workers.Wait()
+	d.refresh(c.Snapshot())
+	if d.diagnosticsBtn.Disabled() || !strings.Contains(d.connectionDetails.Text, "路由机架 0 · 槽号 2") {
+		t.Fatalf("connection controls: %q", d.connectionDetails.Text)
+	}
+	test.Tap(d.diagnosticsBtn)
+	d.workers.Wait()
+	d.refresh(c.Snapshot())
+	for _, want := range []string{"共享资源已用 1", "空闲 31", "最大通信连接数 32"} {
+		if !strings.Contains(d.connectionDetails.Text, want) {
+			t.Fatalf("missing %q in %q", want, d.connectionDetails.Text)
+		}
+	}
+	if len(c.Snapshot().ConnectionPackets) != 8 {
+		t.Fatalf("connection packets: %d", len(c.Snapshot().ConnectionPackets))
+	}
+	d.packetFilter = "读取"
+	d.refreshPackets()
+	if len(d.shownPackets) != 2 {
+		t.Fatalf("read packets: %d", len(d.shownPackets))
+	}
+	d.packets.Select(1)
+	for _, want := range []string{"DB1.DBD0", "值：42", "真实报文字节"} {
+		if !strings.Contains(d.wire.Text, want) {
+			t.Fatalf("missing %q in %q", want, d.wire.Text)
+		}
+	}
+	if err := c.Disconnect(); err != nil {
+		t.Fatal(err)
+	}
+	d.refresh(c.Snapshot())
+	if !d.diagnosticsBtn.Disabled() || strings.Contains(d.connectionDetails.Text, "共享资源已用") {
+		t.Fatalf("stale connection resources: %q", d.connectionDetails.Text)
+	}
+}
 func TestDesktopResultsAndRecordingError(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "file")
 	os.WriteFile(path, []byte("x"), 0600)

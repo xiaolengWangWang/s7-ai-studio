@@ -24,7 +24,7 @@ func (c *Controller) StartDemo(ctx context.Context) error {
 	if e := mem.Set(a, []byte{0, 0, 0, 42}); e != nil {
 		return e
 	}
-	srv, e := simulator.New(simulator.Options{Memory: mem})
+	srv, e := simulator.New(simulator.Options{Memory: mem, MaxConnections: 32})
 	if e != nil {
 		return e
 	}
