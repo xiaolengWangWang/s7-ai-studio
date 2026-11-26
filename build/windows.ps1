@@ -1,4 +1,4 @@
-﻿param([string]$Version,[string]$CompilerRoot='D:\tools\winlibs-gcc16\mingw64')
+param([string]$Version,[string]$CompilerRoot='D:\tools\winlibs-gcc16\mingw64',[switch]$Windows7,[string]$GoExecutable)
 $ErrorActionPreference='Stop'
 $repoRoot=Split-Path -Parent $PSScriptRoot
 if (-not $Version) {
@@ -6,12 +6,22 @@ if (-not $Version) {
  $Version=[regex]::Match($versionSource, '(?m)^var version = "(\d+\.\d+\.\d+)"').Groups[1].Value
 }
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must be a numeric major.minor.patch' }
-$guiRoot=Join-Path $repoRoot 'dist\windows-gui'
-$stage=Join-Path $guiRoot "S7AIStudio-$Version-Windows-x64"
+if ($Windows7) {
+ if (-not $GoExecutable -or -not [IO.Path]::IsPathRooted($GoExecutable) -or -not (Test-Path -LiteralPath $GoExecutable -PathType Leaf)) { throw 'Windows 7 builds require -GoExecutable with an absolute path to the patched Go toolchain' }
+ $go=$GoExecutable
+ $guiRoot=Join-Path $repoRoot 'dist\windows7-gui'
+ $packageName="S7AIStudio-$Version-Windows7-x64"
+} else {
+ if ($GoExecutable) { throw '-GoExecutable requires -Windows7' }
+ $go='go'
+ $guiRoot=Join-Path $repoRoot 'dist\windows-gui'
+ $packageName="S7AIStudio-$Version-Windows-x64"
+}
+$stage=Join-Path $guiRoot $packageName
 $zip="$stage.zip"
 $gcc=Join-Path $CompilerRoot 'bin\gcc.exe'
 if (-not (Test-Path -LiteralPath $gcc)) { $command=Get-Command gcc.exe -ErrorAction SilentlyContinue; if(-not $command){throw 'MinGW x64 gcc.exe is required; pass -CompilerRoot'}; $gcc=$command.Source }
-$old=@{};foreach($name in @('PATH','CC','CGO_ENABLED','GOOS','GOARCH')){$old[$name]=[Environment]::GetEnvironmentVariable($name)}
+$old=@{};foreach($name in @('PATH','CC','CGO_ENABLED','GOOS','GOARCH','GOROOT','GOTOOLCHAIN','CGO_CFLAGS','CGO_CXXFLAGS')){$old[$name]=[Environment]::GetEnvironmentVariable($name)}
 $syso=Join-Path $repoRoot 'cmd\s7-ai\rsrc_windows_amd64.syso'
 function Invoke-Native([scriptblock]$Action) { $previous=$ErrorActionPreference; $ErrorActionPreference='Continue'; & $Action 2>&1 | ForEach-Object { $_.ToString() }; $code=$LASTEXITCODE; $ErrorActionPreference=$previous; if($code -ne 0){throw "Native command failed ($code)"} }
 function Write-PackageText([string]$Path, [string]$Text, [Text.Encoding]$Encoding) {
@@ -24,12 +34,34 @@ try {
  New-Item -ItemType Directory -Force -Path $stage | Out-Null
  $env:PATH=(Split-Path $gcc)+';'+$env:PATH; $env:CC=$gcc; $env:CGO_ENABLED='1';$env:GOOS='windows';$env:GOARCH='amd64'
  $machine=(& $gcc -dumpmachine).Trim();if($machine -ne 'x86_64-w64-mingw32'){throw "Compiler target is $machine"}
+ if ($Windows7) {
+  # Tested with Go 1.26.6 and the go-1-26.diff patch from XTLS/go-win7 at 9dd0f3fda3ebea6a7a983ce03e95281467d653f0.
+  $env:GOROOT=$null
+  $env:GOTOOLCHAIN='local'
+  $goRoot=(& $go env GOROOT).Trim()
+  if ($LASTEXITCODE -ne 0 -or -not $goRoot) { throw 'Cannot inspect patched Go toolchain' }
+  $runtimeSource=Get-Content -LiteralPath (Join-Path $goRoot 'src/runtime/os_windows.go') -Encoding UTF8 -Raw
+  if (-not $runtimeSource.Contains('_BCryptGenRandom = windowsFindfunc(bcrypt, []byte("BCryptGenRandom\000"))') -or $runtimeSource.Contains('bcryptprimitives.dll not found')) { throw 'Go runtime is missing the required Windows 7 compatibility patch' }
+  $winTargetFlags='-D_WIN32_WINNT=0x0601 -DWINVER=0x0601 -DNTDDI_VERSION=0x06010000'
+  $cflags=(& $go env CGO_CFLAGS).Trim()
+  if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect CGO_CFLAGS' }
+  $cxxflags=(& $go env CGO_CXXFLAGS).Trim()
+  if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect CGO_CXXFLAGS' }
+  $env:CGO_CFLAGS="$cflags $winTargetFlags"
+  $env:CGO_CXXFLAGS="$cxxflags $winTargetFlags"
+ }
  # Patch resources after linking to avoid colliding with MinGW/Fyne manifests.
  if(Test-Path -LiteralPath $syso){Remove-Item -LiteralPath $syso}
  $exe=Join-Path $stage 'S7AIStudio.exe'
- Invoke-Native {go build -trimpath -tags no_emoji -ldflags "-s -w -H windowsgui -X main.version=$Version -extldflags=-static" -o $exe ./cmd/s7-ai}
+ $tags=if($Windows7){'no_emoji,win7compat'}else{'no_emoji'}
+ Invoke-Native {& $go build -trimpath -tags $tags -ldflags "-s -w -H windowsgui -X main.version=$Version -extldflags=-static" -o $exe ./cmd/s7-ai}
+ if ($Windows7) {
+  $env:GOROOT=$old['GOROOT']
+  $env:GOTOOLCHAIN=$old['GOTOOLCHAIN']
+ }
  Invoke-Native {go run github.com/tc-hib/go-winres@v0.3.3 patch --no-backup --in assets/icon/windows/winres.json --product-version $Version --file-version "$Version.0" $exe}
- $readme=Get-Content -LiteralPath platform/windows/README-gui.template -Encoding UTF8 -Raw
+ $readmeTemplate=if($Windows7){'platform/windows/README-gui-win7.template'}else{'platform/windows/README-gui.template'}
+ $readme=Get-Content -LiteralPath $readmeTemplate -Encoding UTF8 -Raw
  $readme=$readme.Replace('{{VERSION}}',$Version)
  if($readme.Contains('E-SafeNet') -or $readme.Contains([char]0) -or $readme.Contains('{{VERSION}}')) {throw 'Invalid package README'}
  Write-PackageText (Join-Path $stage 'README.txt') ($readme -replace '\r?\n',"`r`n") ([Text.UTF8Encoding]::new($true))
@@ -51,6 +83,7 @@ try {
  $hash=(Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
  Write-PackageText (Join-Path $guiRoot 'SHA256SUMS.txt') "$hash  $([IO.Path]::GetFileName($zip))`n" ([Text.UTF8Encoding]::new($false))
  $manifest=@{version=$Version;fileVersion="$Version.0";commit=(git rev-parse HEAD);dirty= -not [string]::IsNullOrWhiteSpace((git status --porcelain | Out-String));compiler=$gcc;zip=[IO.Path]::GetFileName($zip);sha256=$hash;exeSha256=(Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant();bytes=(Get-Item -LiteralPath $zip).Length}
+ if ($Windows7) { $manifest.target='Windows 7 SP1 x64'; $manifest.goVersion=(& $go version).Trim() }
  [IO.File]::WriteAllText((Join-Path $guiRoot 'build-manifest.json'),($manifest | ConvertTo-Json),[Text.UTF8Encoding]::new($false))
  Write-Output $zip; Write-Output "SHA256 $hash"
 } finally {

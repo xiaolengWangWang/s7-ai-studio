@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-var version = "1.0.1"
+var version = "1.1.0"
 
 func main() {
 	smokeDir := flag.String("smoke-test", "", "验证自有回环演示并保存证据后退出")

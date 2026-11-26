@@ -1,7 +1,7 @@
 S7 AI Studio {{VERSION}} — Windows x64 GUI 正式版
 
 解压后双击 S7AIStudio.exe，无需安装 Go 或 MinGW。
-需要 Windows x64 与支持 OpenGL 的图形驱动。
+需要 Windows 10 或更高版本的 64 位系统，以及支持 OpenGL 2.1 的显卡驱动。
 
 快速演示：
 1. 点击“启动本机演示”，连接自有 127.0.0.1 合成对端，读取 DB1.DBD0 / DINT，初值为 42。

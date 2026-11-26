@@ -476,6 +476,9 @@ func fileSum(path string) (string, error) {
 
 // Install 用下载好的安装包替换正在运行的程序，返回重启时要运行的路径。
 func Install(pkg string) (string, error) {
+	if Windows7Compatibility {
+		return "", ErrUnsupported
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err
@@ -498,6 +501,9 @@ func Install(pkg string) (string, error) {
 
 // CanInstall 表示当前运行方式能否自动安装：Windows 的 exe、macOS 的 .app。从源码运行（go run）时不行。
 func CanInstall() bool {
+	if Windows7Compatibility {
+		return false
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return false

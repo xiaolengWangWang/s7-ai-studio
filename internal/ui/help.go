@@ -8,7 +8,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-//go:embed help.md
+//go:embed help.txt
 var helpMarkdown string
 
 func helpPanel() fyne.CanvasObject {

@@ -132,7 +132,11 @@ func (u *updateView) check() {
 			if update.Newer(rel.Version(), u.current) {
 				u.status.SetText(fmt.Sprintf("发现新版本 %s（%s），请查看更新说明。", rel.Version(), rel.Source))
 				if !u.canInstall() {
-					u.status.SetText(u.status.Text + " 当前运行方式请使用手动下载。")
+					if update.Windows7Compatibility {
+						u.status.SetText(u.status.Text + " 请手动下载 Windows 7 兼容版。")
+					} else {
+						u.status.SetText(u.status.Text + " 当前运行方式请使用手动下载。")
+					}
 				}
 			} else {
 				u.status.SetText("当前已是最新正式版（" + u.current + "）。")
